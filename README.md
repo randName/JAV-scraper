@@ -1,6 +1,4 @@
-dmm.co.jp
-=========
+JAV Scraper
+===========
 
-Scraper for dmm.co.jp
-
-Makers, Genres (Keywords), Actresses
+Web scraper for dmm.co.jp and japorn.tv
