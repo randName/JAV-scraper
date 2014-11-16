@@ -18,12 +18,10 @@ my $content;
 my $p = XML::RSS::Parser->new;
 my $feed; my @works = ();
 
-sub write_to_file
+sub write_to_file($\%)
 {
-	my $fn = shift; my %data = @_ ;
-	open ( DMM, ">$fn" ) || die "Can't open: $!\n";
-	print DMM JSON->new->utf8->encode( %data );
-	close( DMM );
+	my $fn = shift; open ( DMM, ">$fn" ) || die "Can't open: $!\n";
+	print DMM JSON->new->utf8->encode( @_ ); close( DMM );
 }
 
 sub read_from_file
@@ -50,7 +48,8 @@ sub get_count
 		($count[1]) = $ct =~ m/(\d+).*?タイトル中/ ;
 	}
 
-	if ( $domain == 3 ){ return @count; } else { return $count[$domain-1]; }
+	# if ( $domain == 3 ){ return @count; } else { return $count[$domain-1]; }
+	return @count;
 }
 
 sub get_genres
@@ -217,5 +216,45 @@ sub get_items
 	return \%v;
 }
 
+sub update_counts
+{
+	my $makers = shift;
+	my @update; my @updated;
+
+	for my $id ( keys %{$makers} )
+	{
+		my @s_c = get_count( "maker", $id, $makers->{$id}{'domain'} );
+
+		if ( exists($makers->{$id}{'count'}) )
+		{
+			if ( not ( @s_c ~~ @{$makers->{$id}{'count'}} ) )
+			{
+				print "$id updated:\n";
+				foreach ( qw(0 1) )
+				{
+					$update[$_] = $s_c[$_] - @{$makers->{$id}{'count'}}[$_];
+					if ( $update[$_] ne 0 ){ print "\t$_ +$update[$_]\n" }
+				}
+				push( @updated, ( $id, @update ) );
+			}
+		}
+		else
+		{
+			print "$id initialized with ( $s_c[0], $s_c[1] ).\n";
+		}
+		
+		@{$makers->{$id}{'count'}} = @s_c;
+	}
+}
+
+#my %keywords = %{&get_genres}; write_to_file("genres.json", %keywords );
+#my %studios = %{&get_makers}; # write_to_file("makers.json", %studios );
+#
+my %studios = read_from_file("makers.json");
+update_counts(\%studios);
+write_to_file("makers.json", %studios);
+
 #get_pages( "$DMM/$DOM[0]/list/$RSS[0]/$PARAMS/id=$id", 1, $count, 125 );
 #get_pages( "$DMM/$DOM[1]/list/$RSS[1]/$PARAMS/id=$id", 1, $count, 125 );
+
+
