@@ -9,16 +9,18 @@ binmode(STDOUT,":utf8");
 my $DMM = "http://www.dmm.co.jp";
 my @DOM = ( "digital/videoa/-", "mono/dvd/-" );
 my @RSS = ( "rss/=", "=/rss=create" );
-my $PARAMS = "article=maker/sort=release_date";
+
+my @PAGES_URL; 
+foreach ( qw(0 1) ){ $PAGES_URL[$_] = "$DMM/$DOM[$_]/list/$RSS[$_]/article=maker/sort=release_date"; }
 
 my @MORAS = qw(ya yu yo wa wo nn);
 foreach my $c ('',qw(k s t n h m r)){ foreach (qw(a i u e o)) { push(@MORAS,$c.$_); } }
 
 my $content;
 my $p = XML::RSS::Parser->new;
-my $feed; my @works = ();
+my $feed;
 
-sub write_to_file($\%)
+sub write_to_file
 {
 	my $fn = shift; open ( DMM, ">$fn" ) || die "Can't open: $!\n";
 	print DMM JSON->new->utf8->encode( @_ ); close( DMM );
@@ -28,7 +30,7 @@ sub read_from_file
 {
 	my $fn = shift; 
 	my $_text = do { open( DMM, "<:encoding(UTF-8)", $fn) or die("Error"); local $/; <DMM> };
-	return %{JSON->new->decode($_text)};
+	return JSON->new->decode($_text);
 }
 
 sub get_count
@@ -165,57 +167,6 @@ sub get_actresses
 	return \%acts;
 }
 
-sub get_pages
-{
-	my ( $q, $i_start, $i_end, $step ) = @_ ;
-
-	my $p_end = int( $i_end/$step );
-	if ( $i_end%$step > 0 ){ $p_end += 1; }
-
-	print "$i_start\t$i_end\t$p_end\t$step\n";
-
-	for ( my $i = int( $i_start/$step )+1; $i <= $p_end; $i++ )
-	{
-		$feed = $p->parse_uri( "$q/limit=$step/page=$i/" );
-
-		if ( not defined $feed )
-		{
-			if ( $step != 1 )
-			{
-				get_pages( $q, ($i-1)*$step+1, $i*$step, $step/5 );
-			}
-			else { print "error at $i\n"; }
-		}
-		else
-		{
-			foreach ( $feed->query('//item') ){ push( @works, get_items($_) ); }
-		}
-	}
-}
-
-sub get_items
-{
-	my %v; my $content = $_->query('content:encoded')->text_content;
-
-	$v{'title'} = $_->query('title')->text_content;
-	$v{'url'} = $_->query('link')->text_content;
-	$v{'description'} = $_->query('description')->text_content;
-	$v{'date'} = $_->query('dc:date')->text_content;
-
-	($v{'cid'}) = $v{'url'} =~ m/cid=([^\/]+)/ ;
-	($v{'runtime'}) = $content =~ m/>([0-9]+)/ ;
-	($v{'label'}) = $content =~ m/article=label\/id=([0-9]+)/g ;
-	($v{'series'}) = $content =~ m/article=series\/id=([0-9]+)/g ;
-	$v{'actress'} = [ $content =~ m/article=actress\/id=([0-9]+)/g ];
-
-	$v{'tags'} = [ $content =~ m/article=keyword\/id=([0-9]+)/g ];
-
-	#print "$_ $v{$_}\n" for keys %v; print "\n";
-	#print "$v{'cid'}\t$v{'title'}\n";
-	
-	return \%v;
-}
-
 sub update_counts
 {
 	my $makers = shift;
@@ -235,7 +186,7 @@ sub update_counts
 					$update[$_] = $s_c[$_] - @{$makers->{$id}{'count'}}[$_];
 					if ( $update[$_] ne 0 ){ print "\t$_ +$update[$_]\n" }
 				}
-				push( @updated, ( $id, @update ) );
+				push( @updated, $id );
 			}
 		}
 		else
@@ -245,16 +196,86 @@ sub update_counts
 		
 		@{$makers->{$id}{'count'}} = @s_c;
 	}
+
+	return @updated;
 }
 
-#my %keywords = %{&get_genres}; write_to_file("genres.json", %keywords );
-#my %studios = %{&get_makers}; # write_to_file("makers.json", %studios );
-#
-my %studios = read_from_file("makers.json");
-update_counts(\%studios);
-write_to_file("makers.json", %studios);
+sub get_pages
+{
+	my ( $works, $q, $i_start, $i_end, $step ) = @_ ;
 
-#get_pages( "$DMM/$DOM[0]/list/$RSS[0]/$PARAMS/id=$id", 1, $count, 125 );
-#get_pages( "$DMM/$DOM[1]/list/$RSS[1]/$PARAMS/id=$id", 1, $count, 125 );
+	my $p_end = int( $i_end/$step );
+	if ( $i_end%$step > 0 ){ $p_end += 1; }
 
+	# print "$i_start\t$i_end\t$p_end\t$step\n";
 
+	for ( my $i = int( $i_start/$step )+1; $i <= $p_end; $i++ )
+	{
+		$feed = $p->parse_uri( "$q/limit=$step/page=$i/" );
+
+		if ( not defined $feed )
+		{
+			if ( $step != 1 )
+			{
+				get_pages( $works, $q, ($i-1)*$step+1, $i*$step, $step/5 );
+			}
+			else { print "error at $i\n"; }
+		}
+		else
+		{
+			foreach ( $feed->query('//item') ){ push( @{$works}, get_items($_) ); }
+		}
+	}
+}
+
+sub get_items
+{
+	my %v; my $content = $_->query('content:encoded')->text_content;
+
+	$v{'title'} = $_->query('title')->text_content;
+	$v{'url'} = $_->query('link')->text_content;
+	$v{'description'} = $_->query('description')->text_content;
+	$v{'date'} = $_->query('dc:date')->text_content;
+
+	($v{'cid'}) = $v{'url'} =~ m/cid=([^\/]+)/ ;
+	($v{'runtime'}) = $content =~ m/>([0-9]+)分/ ;
+	($v{'label'}) = $content =~ m/article=label\/id=([0-9]+)/g ;
+	($v{'series'}) = $content =~ m/article=series\/id=([0-9]+)/g ;
+	$v{'actress'} = [ $content =~ m/article=actress\/id=([0-9]+)/g ];
+
+	$v{'tags'} = [ $content =~ m/article=keyword\/id=([0-9]+)/g ];
+
+	#print "$_ $v{$_}\n" for keys %v; print "\n";
+	#print "$v{'cid'}\t$v{'title'}\n";
+	
+	return \%v;
+}
+
+sub get_works
+{
+	my $makers = shift;
+
+	for my $id ( keys %{$makers} )
+	{
+ 		my @works = ();
+
+		foreach ( qw(0 1) )
+		{
+			get_pages( \@works, "$PAGES_URL[$_]/id=$id", 1, @{$makers->{$id}{'count'}}[$_], 125 );
+		}
+
+		# foreach ( @works ) { print "$_ $work->{$_}\t" for ( keys %{$work} ); print "\n"; }
+
+		write_to_file( "works/$id.json", \@works );
+	}
+}
+
+#my %keywords = %{&get_genres}; write_to_file("genres.json", \%keywords );
+# my %studios = %{&get_makers}; write_to_file("makers.json", \%studios );
+
+my %studios = %{&read_from_file("makers.json")};
+my @updated = update_counts(\%studios);
+my %st_updated = map { $_ => $studios{$_} } @updated;
+get_works(\%st_updated); 
+
+#write_to_file("makers.json", \%studios);
