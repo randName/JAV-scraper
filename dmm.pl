@@ -18,7 +18,6 @@ foreach my $c ('',qw(k s t n h m r)){ foreach (qw(a i u e o)) { push(@MORAS,$c.$
 
 my $content;
 my $p = XML::RSS::Parser->new;
-my $feed;
 
 sub write_to_file
 {
@@ -202,6 +201,7 @@ sub update_counts
 
 sub get_pages
 {
+	my $feed;
 	my ( $works, $q, $i_start, $i_end, $step ) = @_ ;
 
 	my $p_end = int( $i_end/$step );
