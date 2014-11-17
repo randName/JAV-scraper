@@ -21,14 +21,14 @@ my $p = XML::RSS::Parser->new;
 
 sub write_to_file
 {
-	my $fn = shift; open ( DMM, ">$fn" ) || die "Can't open: $!\n";
+	my $fn = shift; open ( DMM, ">$fn" ) or die "Can't open: $!\n";
 	print DMM JSON->new->utf8->encode( @_ ); close( DMM );
 }
 
 sub read_from_file
 {
 	my $fn = shift; 
-	my $_text = do { open( DMM, "<:encoding(UTF-8)", $fn) or die("Error"); local $/; <DMM> };
+	my $_text = do { open( DMM, "<:encoding(UTF-8)", $fn) or die("Can't open: $!\n"); local $/; <DMM> };
 	return JSON->new->decode($_text);
 }
 
@@ -179,13 +179,14 @@ sub update_counts
 		{
 			if ( not ( @s_c ~~ @{$makers->{$id}{'count'}} ) )
 			{
-				print "$id updated:\n";
+				print "$id updated:";
 				foreach ( qw(0 1) )
 				{
 					$update[$_] = $s_c[$_] - @{$makers->{$id}{'count'}}[$_];
-					if ( $update[$_] ne 0 ){ print "\t$_ +$update[$_]\n" }
+					if ( $update[$_] ne 0 ){ print "\t$_\t+$update[$_]"; }
 				}
 				push( @updated, $id );
+				print "\n";
 			}
 		}
 		else
@@ -259,6 +260,8 @@ sub get_works
 	{
  		my @works = ();
 
+		print "$id: ";
+
 		foreach ( qw(0 1) )
 		{
 			get_pages( \@works, "$PAGES_URL[$_]/id=$id", 1, @{$makers->{$id}{'count'}}[$_], 125 );
@@ -267,15 +270,50 @@ sub get_works
 		# foreach ( @works ) { print "$_ $work->{$_}\t" for ( keys %{$work} ); print "\n"; }
 
 		write_to_file( "works/$id.json", \@works );
+		
+		print @works." works written.\n";
 	}
 }
 
 #my %keywords = %{&get_genres}; write_to_file("genres.json", \%keywords );
-# my %studios = %{&get_makers}; write_to_file("makers.json", \%studios );
 
-my %studios = %{&read_from_file("makers.json")};
+$|=1;
+
+my %studios; my %st_updated;
+
+if ( -e "makers.json" )
+{
+	print "Reading from file...";
+	%studios = %{&read_from_file("makers.json")};
+	print " OK.\n";
+
+	print "Getting online version...";
+	%st_updated = %{&get_makers};
+	print " OK.\n";
+
+	if ( %studios != %st_updated )
+	{
+		print "Maker list updated\n";
+
+		# update maker list
+	}
+	else
+	{
+		print "Local database matches online. Continuing.\n";
+	}
+}
+else
+{
+	print "Database not found. Getting online version...";
+	%studios = %{&get_makers};
+	print " OK.\n";
+}
+
+print "Updating counts...\n";
 my @updated = update_counts(\%studios);
-my %st_updated = map { $_ => $studios{$_} } @updated;
+print " OK.\n";
+%st_updated = map { $_ => $studios{$_} } @updated;
+print @updated." makers require update. Updating...\n";
 get_works(\%st_updated); 
-
-#write_to_file("makers.json", \%studios);
+print " OK.\n";
+write_to_file("makers.json", \%studios);
