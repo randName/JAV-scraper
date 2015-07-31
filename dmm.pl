@@ -279,41 +279,67 @@ sub get_works
 
 $|=1;
 
-my %studios; my %st_updated;
-
-if ( -e "makers.json" )
+sub update_scrape
 {
-	print "Reading from file...";
-	%studios = %{&read_from_file("makers.json")};
-	print " OK.\n";
+	my %studios; my %st_updated;
 
-	print "Getting online version...";
-	%st_updated = %{&get_makers};
-	print " OK.\n";
-
-	if ( %studios != %st_updated )
+	if ( -e "makers.json" )
 	{
-		print "Maker list updated\n";
+		print "Reading from file...";
+		%studios = %{&read_from_file("makers.json")};
+		print " OK.\n";
 
-		# update maker list
+		print "Getting online version...";
+		%st_updated = %{&get_makers};
+		print " OK.\n";
+
+		if ( %studios != %st_updated )
+		{
+			print "Maker list updated\n";
+
+			# update maker list
+		}
+		else
+		{
+			print "Local database matches online. Continuing.\n";
+		}
 	}
 	else
 	{
-		print "Local database matches online. Continuing.\n";
+		print "Database not found. Getting online version...";
+		%studios = %{&get_makers};
+		print " OK.\n";
 	}
-}
-else
-{
-	print "Database not found. Getting online version...";
-	%studios = %{&get_makers};
+
+	print "Updating counts...\n";
+	my @updated = update_counts(\%studios);
 	print " OK.\n";
+	%st_updated = map { $_ => $studios{$_} } @updated;
+	print @updated." makers require update. Updating...\n";
+	get_works(\%st_updated); 
+	print " OK.\n";
+	write_to_file("makers.json", \%studios);
 }
 
-print "Updating counts...\n";
-my @updated = update_counts(\%studios);
-print " OK.\n";
-%st_updated = map { $_ => $studios{$_} } @updated;
-print @updated." makers require update. Updating...\n";
-get_works(\%st_updated); 
-print " OK.\n";
-write_to_file("makers.json", \%studios);
+my @works = sort { $a->{'cid'} cmp $b->{'cid'} } @{&read_from_file("works/45061.json")};
+
+my @u_works;
+
+# black magic
+push( @u_works, $_->{'cid'} =~ s/0*(\d+)$/0*\1\$/r ) foreach @works;
+my %seen; grep !$seen{$_}++, @u_works;
+
+foreach my $sid ( @u_works )
+{
+	my @matches = grep { $_->{'cid'} =~ qr/$sid/ } @works;
+
+	foreach my $work ( @matches )
+	{
+		if ( $work->{'url'} =~ /digital/ )
+		{
+			print "$work->{'cid'}\t$work->{'url'}\n";
+			last;
+		}
+		# print "$work->{$_}\t" for keys %{$work}; print "\n";
+	}
+}

@@ -38,72 +38,36 @@ sub get_genres
 	my %genres;
 
 	$content = get( "$JAP/categorylists.aspx?Dept_ID=29" );
+
 	foreach ( $content =~ m/subdept_products(.+?)<\/a>/mg )
 	{
 		my @g = $_ =~ m/subdept_id=(\d+).+?">(.+)/m; chomp $g[1];
 		if ( $g[0] ne '' and $g[1] ne '' ){ $genres{$g[0]} = $g[1]; }
 	}
 
-	$content = get( "$JAP/ppv/ppv_categorylists.aspx?&VODTypeID=1" );
-	foreach ( $content =~ m/dept.aspx(.+?)<\/a>/mg )
-	{
-		my @g = $_ =~ m/Cat_ID=(\d+).+?">(.+)/m; chomp $g[1];
-		if ( $g[0] ne '' && ( ! $genres{$g[0]} ) ){ $genres{$g[0]} = $g[1]; }
-	}
-
 	return \%genres;
 }
 
-=begin comment
 
 sub get_makers
 {
 	my %makers;
 
-	foreach ( @MORAS )
+	$content = get( "$JAP/studiolists.aspx?&Dept_ID=29");
+
+	foreach ( $content =~ m/(?s)(StudioID.+?)<\/a>/mg )
 	{
+		my @m = $_ =~ m/(?s)StudioID=(\d+).+?>(.*)/m;
 
-		$content = get( "$DMM/$DOM[0]/maker/=/keyword=$_/" );
-
-		foreach ( $content =~ m/(?s)class="d-unit">(.+?)<!--\/d-unit-->/mg )
-		{
-			my @m = $_ =~ m/(?s)id=(\d+).+?src="(.+?)".+?llarge">(.+?)<.+?\n(.*)<\/div>/m;
-
-			my $id = shift(@m); if ( $id eq '' ){ next; }
-
-			if ( $m[2] ne '' ){ $m[2] =~ s/.*<p>(.+?)<\/p>.*/\1/; }
-			if ( $m[0] =~ m/noimage/ ){ $m[0] = ''; }
-
-			$m[3] = 1;
-
-			my %maker; @maker{qw(img name description domain)} = @m;
-			$makers{$id} = \%maker;
-
-		}
-
-		$content = get( "$DMM/$DOM[1]/maker/=/keyword=$_/" );
-
-		foreach ( $content =~ m/(?s)class="w50">(.+?)class="clear"/mg )
-		{
-			my @m = $_ =~ m/(?s)id=(\d+).+?src="(.+?)".+?bold">(.+?)<.+?\n(.*)<\/div>.*/m;
-
-			my $id = shift(@m); if ( $id eq '' ){ next; }
-
-			if ( $makers{$id} ){ $makers{$id}{"domain"} = 3; next; }
-			
-			if ( $m[2] ne '' ){ $m[2] =~ s/.*<p>(.+?)<\/p>.*/\1/; }
-			if ( $m[0] =~ m/noimage/ ){ $m[0] = ''; }
-
-			$m[3] = 2;
-
-			my %maker; @maker{qw(img name description domain)} = @m;
-			$makers{$id} = \%maker;
-		}
+		my $id = $m[0]; if ( $id eq '' ){ next; }
+		my %maker; @maker{'name'} = $m[1];
+		$makers{$id} = \%maker;
 	}
 
 	return \%makers;
 }
 
+=begin comment
 sub get_actresses
 {
 	my %acts;
@@ -288,3 +252,4 @@ get_works(\%st_updated);
 =cut
 
 #print "$_\n" for values %{&get_genres};
+get_makers
