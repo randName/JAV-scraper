@@ -7,8 +7,10 @@ class DMM:
 	URL = "http://www.dmm.co.jp/"
 	DOM = ( "digital/videoa/-/", "mono/dvd/-/" )
 
-	MORAS = [ c.strip(' ')+v for c in ' kstnhmr' for v in 'aiueo']
+	MORAS = [ c.strip()+v for c in ' kstnhmr' for v in 'aiueo']
 	MORAS.extend(['ya','yu','yo','wa','wo','nn'])
+
+	D_SMALLTMB = 'd-boxpicdata d-smalltmb' 
 
 	def get_soup( self, url ):
 		"""Get URL as a BeautifulSoup."""
@@ -23,7 +25,7 @@ class DMM:
 		except AttributeError:
 			return None
 
-	def get_string_if_can( self, tag ):
+	def get_string( self, tag ):
 		"""Returns empty string if attribute does not exist."""
 		try:
 			return tag.string
@@ -34,7 +36,7 @@ class DMM:
 		"""Get filename from <img> tag src."""
 		name = img.get('src').rsplit('/',1)[-1].split('.')
 		if name[0] == 'noimage':
-			return None
+			return '' 
 		else:
 			return name[0]
 
@@ -46,12 +48,12 @@ class DMM:
 		except AttributeError:
 			return None
 
-	def insert_id( self, i_dict, key, data ):
+	def insert_id( self, dic, key, data ):
 		"""Insert data into dictionary"""
 		if not key: return None
-		if key not in i_dict:
-			i_dict[key] = data
-		elif i_dict[key] != data:
+		if key not in dic:
+			dic[key] = data
+		elif dic[key] != data:
 			print("Mismatch found with ID %s:" % (key))
 			print(i_dict[key])
 			print(data)
@@ -86,10 +88,10 @@ class DMM:
 
 		soup = self.get_soup( self.URL + self.DOM[0] + search )
 
-		for maker in soup.find_all('div', class_='d-boxpicdata d-smalltmb'):
+		for maker in soup.find_all('div', class_=self.D_SMALLTMB):
 			name = maker.find(class_='d-ttllarge').string
 			roma = self.get_filename(maker.img)
-			desc = self.get_string_if_can(maker.p).strip()
+			desc = self.get_string(maker.p).strip()
 
 			self.insert_id( makers, self.get_id(maker.a), ( name, roma, desc ) )
 
@@ -109,6 +111,12 @@ class DMM:
 				self.insert_id( makers, self.get_id(maker.a), ( maker.string, '', '' ) )
 
 		return makers
+
+	def get_makers_by_tag( self, t_id ):
+
+		search = 'maker/=/article=keyword/id=' + t_id + '/'
+		soup = self.get_soup( self.URL + self.DOM[0] + search )
+		return [ self.get_id(m.a) for m in soup.find_all('div',class_=self.D_SMALLTMB) ]
 
 	def get_actresses( self, mora ):
 
@@ -175,7 +183,7 @@ if __name__ == "__main__":
 	dmm = DMM()
 	# a = dmm.get_tags()
 	# dmm.get_makers(mora) for mora in dmm.MORAS
-	a = dmm.get_actresses('a')
+	# a = dmm.get_actresses('a')
 	# a = dmm.get_series('a')
-	print(a)
-	print(len(a))
+	# print(a)
+	# print(len(a))
