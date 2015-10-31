@@ -11,6 +11,7 @@ class DMM:
 	MORAS.extend(['ya','yu','yo','wa','wo','nn'])
 
 	D_SMALLTMB = 'd-boxpicdata d-smalltmb' 
+	L_PAGE = 'list-boxcaptside list-boxpagenation'
 
 	def get_soup( self, url ):
 		"""Get URL as a BeautifulSoup."""
@@ -57,6 +58,19 @@ class DMM:
 			print("Mismatch found with ID %s:" % (key))
 			print(i_dict[key])
 			print(data)
+
+	def get_count( self, article, a_id ):
+		"""Get total work count"""
+		query = 'list/=/article=' + article + '/id=' + a_id + '/'
+
+		def get_p(domain):
+			soup = self.get_soup( self.URL + domain + query )
+			info = soup.find('div',class_=self.L_PAGE)
+			if info: return int(re.match(r'(\d+)',info.p.string).group(1))
+			return 0
+			
+		return [ get_p(domain) for domain in self.DOM ]
+
 
 	def get_tags( self ):
 		"""Get tags from DMM genres page"""
@@ -125,7 +139,7 @@ class DMM:
 
 		soup = self.get_soup( self.URL + self.DOM[0] + search )
 
-		totals = soup.find('div',class_='list-boxcaptside list-boxpagenation group')
+		totals = soup.find('div',class_=self.L_PAGE+' group')
 		count = [ int(x) for x in re.findall(r'\d+', totals.p.string) ]
 		cur_page = count[4]
 		
