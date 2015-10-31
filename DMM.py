@@ -103,10 +103,13 @@ class DMM:
 
 	def get_actresses( self, mora ):
 
-		search = 'actress/=/keyword=' + mora + '/' 
+		search = 'actress/=/keyword=' + mora + '/sort=count/' 
 		actresses = {}
 
 		soup = self.get_soup( self.URL + self.DOM[0] + search )
+
+		# soup.find('div',class_='list-boxcaptside list-boxpagenation group').p.string
+		# soup.find('li',class_='terminal')
 
 		for actress in soup.find('ul',class_='d-item act-box-100 group').find_all('a'):
 			name = actress.img.get('alt')
@@ -117,6 +120,8 @@ class DMM:
 
 		soup = self.get_soup( self.URL + self.DOM[1] + search )
 
+		# soup.find('li',class_='terminal')
+
 		for actress in soup.find('ul',class_='act-box-100 group mg-b20').find_all('a'):
 			name = actress.string
 			roma = self.get_filename(actress.img)
@@ -125,10 +130,33 @@ class DMM:
 
 		return actresses
 
+	def get_series( self, mora ):
+
+		search = 'series/=/keyword=' + mora + '/sort=ruby/' 
+		series = {}
+
+		soup = self.get_soup( self.URL + self.DOM[0] + search )
+
+		# soup.find('div',class_='list-boxcaptside list-boxpagenation group').p.string
+		# soup.find('li',class_='terminal')
+
+		for ser in soup.find_all('div',class_='tx-work mg-b12 left'):
+			strs = [ s for s in ser.stripped_strings ]
+			if len(strs) == 1: strs.append('')
+
+			self.insert_id( series, self.get_id(ser.a), tuple(strs) )
+
+		# soup = self.get_soup( self.URL + self.DOM[1] + search )
+
+		# soup.find('li',class_='terminal')
+
+		return series
+
 if __name__ == "__main__":
 	dmm = DMM()
 	# a = dmm.get_tags()
 	# a = dmm.get_makers('a')
-	a = dmm.get_actresses('a')
+	# a = dmm.get_actresses('a')
+	a = dmm.get_series('a')
 	print(a)
 	print(len(a))
