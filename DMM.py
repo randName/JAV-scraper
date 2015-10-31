@@ -38,6 +38,14 @@ class DMM:
 		else:
 			return name[0]
 
+	def get_pagenum( self, a ):
+		"""Get page number from <a> tag href."""
+		pgn = re.compile(r'/page=(\d+)')
+		try:
+			return int(pgn.search(a.get('href')).group(1))
+		except AttributeError:
+			return None
+
 	def insert_id( self, i_dict, key, data ):
 		"""Insert data into dictionary"""
 		if not key: return None
@@ -56,12 +64,10 @@ class DMM:
 
 		for section in soup.find_all('div', id=re.compile('^list')):
 			category = section.div.string
-			if category == "おすすめジャンル":
-				continue
-			elif category == "タイプ":
-				category = "ＡＶ女優タイプ"
+			if category == "おすすめジャンル": continue
+			if category == "タイプ": category = "ＡＶ女優タイプ"
 
-			for link in section('a'):
+			for link in section.ul('a'):
 				self.insert_id( tags, self.get_id(link), ( link.string, category ) )
 
 		soup = self.get_soup( self.URL + self.DOM[1] + 'genre/' )
@@ -93,11 +99,14 @@ class DMM:
 			name = maker.img.get('alt')
 			roma = self.get_filename(maker.img)
 			desc = maker.br.string.strip()
+			desc = re.sub('〜','～',desc)
 
 			self.insert_id( makers, self.get_id(maker.a), ( name, roma, desc ) )
 
-		for maker in soup.find(class_='list-table mg-t12').find_all('a'):
-			self.insert_id( makers, self.get_id(maker.a), ( maker.string, '', '' ) )
+		extra_base = soup.find(class_='list-table mg-t12')
+		if extra_base:
+			for maker in extra_base.find_all('a'):
+				self.insert_id( makers, self.get_id(maker.a), ( maker.string, '', '' ) )
 
 		return makers
 
@@ -108,25 +117,35 @@ class DMM:
 
 		soup = self.get_soup( self.URL + self.DOM[0] + search )
 
-		# soup.find('div',class_='list-boxcaptside list-boxpagenation group').p.string
-		# soup.find('li',class_='terminal')
+		totals = soup.find('div',class_='list-boxcaptside list-boxpagenation group')
+		count = [ int(x) for x in re.findall(r'\d+', totals.p.string) ]
+		cur_page = count[4]
+		
+		while cur_page <= count[3]:
+			for actress in soup.find('ul',class_='d-item act-box-100 group').find_all('a'):
+				name = actress.img.get('alt')
+				roma = self.get_filename(actress.img)
+				# furi = actress.span.string 
 
-		for actress in soup.find('ul',class_='d-item act-box-100 group').find_all('a'):
-			name = actress.img.get('alt')
-			roma = self.get_filename(actress.img)
-			# furi = actress.span.string 
-
-			self.insert_id( actresses, self.get_id(actress), ( name, roma ) )
+				self.insert_id( actresses, self.get_id(actress), ( name, roma ) )
+			
+			cur_page += 1
+			soup = self.get_soup(self.URL+self.DOM[0]+search + 'page='+str(cur_page)+'/' )
 
 		soup = self.get_soup( self.URL + self.DOM[1] + search )
 
-		# soup.find('li',class_='terminal')
+		num_pages = self.get_pagenum(soup.find('li',class_='terminal').a)
+		cur_page = 1
 
-		for actress in soup.find('ul',class_='act-box-100 group mg-b20').find_all('a'):
-			name = actress.string
-			roma = self.get_filename(actress.img)
+		while cur_page <= num_pages:
+			for actress in soup.find('ul',class_='act-box-100 group mg-b20').find_all('a'):
+				name = actress.string
+				roma = self.get_filename(actress.img)
 
-			self.insert_id( actresses, self.get_id(actress), ( name, roma ) )
+				self.insert_id( actresses, self.get_id(actress), ( name, roma ) )
+
+			cur_page += 1
+			soup = self.get_soup(self.URL+self.DOM[1]+search + 'page='+str(cur_page)+'/' )
 
 		return actresses
 
@@ -155,8 +174,8 @@ class DMM:
 if __name__ == "__main__":
 	dmm = DMM()
 	# a = dmm.get_tags()
-	# a = dmm.get_makers('a')
-	# a = dmm.get_actresses('a')
-	a = dmm.get_series('a')
+	# dmm.get_makers(mora) for mora in dmm.MORAS
+	a = dmm.get_actresses('a')
+	# a = dmm.get_series('a')
 	print(a)
 	print(len(a))
