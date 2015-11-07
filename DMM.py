@@ -205,7 +205,10 @@ class DMM:
 
                 content = BeautifulSoup( item.encoded.string, 'html.parser' )
 
-                work['runtime'] = int( content.strong.next_sibling.strip('分') )
+                for info in content('strong'):
+                    if '分' in info.next_sibling:
+                        work['runtime'] = int( info.next_sibling.strip('分') )
+                        break
 
                 for link in content('a'):
                         l = idc.search( link.get('href') )
@@ -232,16 +235,13 @@ class DMM:
                 search = "/article=maker/sort=release_date/id=%s/limit=%d/" % ( m_id, step )
 
                 counts = self.get_count( 'maker', m_id )
+
                 num_pages = [ round(p/step)+1 for p in counts ]
 
                 cur_page = 1
         
                 works = []
 
-                soup = get_rss( 1, search )
-
-                return soup
-                
                 while cur_page <= num_pages[0]:
                         soup = get_rss( 0, search + "page=%d/" % cur_page )
                         works.extend([ self.get_work(item) for item in soup('item') ])
