@@ -68,7 +68,7 @@ class DMM:
                         if info: return int(re.match(r'(\d+)',info.p.string).group(1))
                         return 0
                         
-                return [ get_p(d) for d in ( 0, 1 ) ]
+                return [ get_p(d) for d in range(2) ]
 
 
         def get_tags( self ):
@@ -206,17 +206,17 @@ class DMM:
                 content = BeautifulSoup( item.encoded.string, 'html.parser' )
 
                 for info in content('strong'):
-                    if '分' in info.next_sibling:
-                        work['runtime'] = int( info.next_sibling.strip('分') )
-                        break
+                        if '分' in info.next_sibling:
+                                work['runtime'] = int( info.next_sibling.strip('分') )
+                                break
 
                 for link in content('a'):
                         l = idc.search( link.get('href') )
                         if not l: continue
                         if l.group(1) == 'keyword':
-                                work['tags'].append(l.group(2))
+                                work['tags'].append( l.group(2) )
                         elif l.group(1) == 'actress':
-                                work['actresses'].append(l.group(2))
+                                work['actresses'].append( l.group(2) )
                         else:
                                 self.insert_id( work, l.group(1), l.group(2) )
 
@@ -224,28 +224,27 @@ class DMM:
 
         def get_work_page( self, m_id ):
 
-                def get_rss( domain, path ):
+                def get_rss( s, domain, path ):
                         RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create/" )
 
-                        r = requests.get( 'http://www.dmm.co.jp/' + RSS[domain] + path )
+                        r = s.get( 'http://www.dmm.co.jp/' + RSS[domain] + path )
                         r.encoding = 'utf-8'
+                        print(r.elapsed)
                         return BeautifulSoup( r.text, 'xml' )
 
-                step = 125
-                search = "/article=maker/sort=release_date/id=%s/limit=%d/" % ( m_id, step )
+                search = "/article=maker/sort=release_date/id=%s/" % m_id
+
+                works = [[],[]]
+                worksession = requests.Session()
 
                 counts = self.get_count( 'maker', m_id )
 
-                num_pages = [ round(p/step)+1 for p in counts ]
-
-                cur_page = 1
-        
-                works = []
-
-                while cur_page <= num_pages[0]:
-                        soup = get_rss( 0, search + "page=%d/" % cur_page )
-                        works.extend([ self.get_work(item) for item in soup('item') ])
-                        cur_page += 1
+                for domain in range(2):
+                        page = 1
+                        while len(works[domain]) < counts[domain]:
+                                soup = get_rss( worksession, domain, search + "page=%d/" % page )
+                                works[domain].extend( [ self.get_work(item) for item in soup('item') ] )
+                                page += 1
 
                 return works
 
@@ -262,6 +261,9 @@ if __name__ == "__main__":
         # print( sod )
         # print( len(sod) )
 
-        kv = dmm.get_work_page('46283')
-        print(kv)
-        # print(len(kv))
+        # rct = dmm.get_work_page( '45371' )
+        # wnz = dmm.get_work_page( '6304' )
+        # print([ w['cid'] for w in mkr[0] ])
+        # print([ w['cid'] for w in mkr[1] ])
+
+        # kv = dmm.get_work_page('46283')
