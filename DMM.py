@@ -21,7 +21,7 @@ class DMM:
                 """Get ID from <a> tag href."""
                 rid = re.compile(r'/id=(\d+)')
                 try:
-                        return rid.search(a.get('href')).group(1)
+                        return int( rid.search(a.get('href')).group(1) )
                 except AttributeError:
                         return None
 
