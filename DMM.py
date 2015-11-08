@@ -59,14 +59,24 @@ class DMM:
                         print(data)
 
         def get_count( self, domain, article, a_id ):
-                """Get total work count in domain"""
-                query = "list/=/article=%s/id=%s/" % ( article, a_id )
+                """Get total work count of given ID"""
+                query = "list/=/article=%s/id=%d/" % ( article, a_id )
 
                 soup = self.get_soup( domain, query )
                 info = soup.find('div',class_=self.L_PAGE)
                 if info: return int(re.match(r'(\d+)',info.p.string).group(1))
                 return 0
                         
+        def get_title( self, domain, article, a_id ):
+                """Get title of given ID"""
+                query = "list/=/article=%s/id=%s/" % ( article, a_id )
+
+                soup = self.get_soup( domain, query )
+                title = soup.title.string.split(' - ')[:-2]
+
+                if len(title) == 1: return title[0]
+                return ' - '.join(title)
+
         def get_tags( self ):
                 """Get tags from DMM genres page"""
                 tags = {}
@@ -123,7 +133,7 @@ class DMM:
 
         def get_makers_by_tag( self, t_id ):
 
-                search = 'maker/=/article=keyword/id=' + t_id + '/'
+                search = "maker/=/article=keyword/id=%d" % t_id
                 soup = self.get_soup( 1, search )
                 return [ self.get_id(m.a) for m in soup.find_all('div',class_=self.D_SMALLTMB) ]
 
@@ -176,7 +186,7 @@ class DMM:
                         # print(r.elapsed)
                         return BeautifulSoup( r.text, 'xml' )
 
-                search = "/article=maker/sort=release_date/id=%s/" % m_id
+                search = "/article=maker/sort=release_date/id=%d/" % m_id
 
                 works = []
                 worksession = requests.Session()
