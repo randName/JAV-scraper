@@ -58,19 +58,15 @@ class DMM:
                         print(i_dict[key])
                         print(data)
 
-        def get_count( self, article, a_id ):
-                """Get total work count"""
-                query = 'list/=/article=' + article + '/id=' + a_id + '/'
+        def get_count( self, domain, article, a_id ):
+                """Get total work count in domain"""
+                query = "list/=/article=%s/id=%s/" % ( article, a_id )
 
-                def get_p(domain):
-                        soup = self.get_soup( domain, query )
-                        info = soup.find('div',class_=self.L_PAGE)
-                        if info: return int(re.match(r'(\d+)',info.p.string).group(1))
-                        return 0
+                soup = self.get_soup( domain, query )
+                info = soup.find('div',class_=self.L_PAGE)
+                if info: return int(re.match(r'(\d+)',info.p.string).group(1))
+                return 0
                         
-                return [ get_p(d) for d in range(2) ]
-
-
         def get_tags( self ):
                 """Get tags from DMM genres page"""
                 tags = {}
@@ -192,7 +188,7 @@ class DMM:
 
                 return series
 
-        def get_work( self, item ):
+        def parse_work( self, item ):
 
                 idc = re.compile(r'article=(\w+)/id=(\d+)')
                 properties = ( 'title', 'description', 'link', 'package', 'date' )
@@ -222,29 +218,26 @@ class DMM:
 
                 return work
 
-        def get_work_page( self, m_id ):
+        def get_works( self, domain, m_id, count ):
 
                 def get_rss( s, domain, path ):
                         RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create/" )
 
                         r = s.get( 'http://www.dmm.co.jp/' + RSS[domain] + path )
                         r.encoding = 'utf-8'
-                        print(r.elapsed)
+                        # print(r.elapsed)
                         return BeautifulSoup( r.text, 'xml' )
 
                 search = "/article=maker/sort=release_date/id=%s/" % m_id
 
-                works = [[],[]]
+                works = []
                 worksession = requests.Session()
 
-                counts = self.get_count( 'maker', m_id )
-
-                for domain in range(2):
-                        page = 1
-                        while len(works[domain]) < counts[domain]:
-                                soup = get_rss( worksession, domain, search + "page=%d/" % page )
-                                works[domain].extend( [ self.get_work(item) for item in soup('item') ] )
-                                page += 1
+                page = 1
+                while len(works) < count:
+                        soup = get_rss( worksession, domain, search + "page=%d/" % page )
+                        works.extend( [ self.parse_work(item) for item in soup('item') ] )
+                        page += 1
 
                 return works
 
