@@ -166,7 +166,30 @@ class DMM:
 
                 return actresses
 
-        def get_series( self, mora ):
+        def get_works( self, domain, m_id, count ):
+
+                def get_rss( s, domain, path ):
+                        RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create/" )
+
+                        r = s.get( 'http://www.dmm.co.jp/' + RSS[domain] + path )
+                        r.encoding = 'utf-8'
+                        # print(r.elapsed)
+                        return BeautifulSoup( r.text, 'xml' )
+
+                search = "/article=maker/sort=release_date/id=%s/" % m_id
+
+                works = []
+                worksession = requests.Session()
+
+                page = 1
+                while len(works) < count:
+                        soup = get_rss( worksession, domain, search + "page=%d/" % page )
+                        works.extend( [ self.parse_work(item) for item in soup('item') ] )
+                        page += 1
+
+                return works
+
+        def get_series_list( self, mora ):
 
                 search = 'series/=/keyword=' + mora + '/sort=ruby/' 
                 series = {}
@@ -217,29 +240,6 @@ class DMM:
                                 self.insert_id( work, l.group(1), l.group(2) )
 
                 return work
-
-        def get_works( self, domain, m_id, count ):
-
-                def get_rss( s, domain, path ):
-                        RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create/" )
-
-                        r = s.get( 'http://www.dmm.co.jp/' + RSS[domain] + path )
-                        r.encoding = 'utf-8'
-                        # print(r.elapsed)
-                        return BeautifulSoup( r.text, 'xml' )
-
-                search = "/article=maker/sort=release_date/id=%s/" % m_id
-
-                works = []
-                worksession = requests.Session()
-
-                page = 1
-                while len(works) < count:
-                        soup = get_rss( worksession, domain, search + "page=%d/" % page )
-                        works.extend( [ self.parse_work(item) for item in soup('item') ] )
-                        page += 1
-
-                return works
 
 if __name__ == "__main__":
         dmm = DMM()
