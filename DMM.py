@@ -68,15 +68,23 @@ class DMM:
         if info: return int(re.match(r'(\d+)',info.p.string).group(1))
         return 0
                     
-    def get_title( self, domain, article, a_id ):
+    def get_title( self, article, a_id ):
         """Get title of given ID"""
         query = "list/=/article=%s/id=%s/" % ( article, a_id )
 
-        soup = self.get_soup( domain, query )
-        title = soup.title.string.split(' - ')[:-2]
+        title = []
 
-        if len(title) == 1: return title[0]
-        return ' - '.join(title)
+        for domain in ( 0, 1 ):
+            soup = self.get_soup( domain, query )
+            t = soup.title.string.split(' - ')[:-2]
+            if len(t) == 1:
+                if article == 'actress':
+                    t[0] = re.sub( r'\([^)]*\)', '', t[0] )
+                title.append(t[0])
+            else:
+                title.append(' - '.join(t))
+
+        return title[0]
 
     def get_tags( self ):
         """Get tags from DMM genres page"""
@@ -237,6 +245,7 @@ class DMM:
         for p in properties: self.insert_id( work, p, item.find(p).string )
 
         work['cid'] = re.search(r'cid=(\w+)', work['link']).group(1)
+        work['date'] = work['date'].split('T')[0]
 
         content = BeautifulSoup( item.encoded.string, 'html.parser' )
 
