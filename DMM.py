@@ -190,14 +190,14 @@ class DMM:
 
         return actresses
 
-    def get_works( self, domain, m_id, count ):
+    def get_works( self, domain, m_id, count, page=1 ):
 
         def get_rss( s, domain, path ):
             RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create/" )
 
             r = s.get( 'http://www.dmm.co.jp/' + RSS[domain] + path )
             r.encoding = 'utf-8'
-            # print(r.elapsed)
+            print( r.elapsed, end="\r" )
             return BeautifulSoup( r.text, 'xml' )
 
         search = "/article=maker/sort=release_date/id=%d/" % m_id
@@ -205,7 +205,6 @@ class DMM:
         works = []
         worksession = requests.Session()
 
-        page = 1
         while len(works) < count:
             soup = get_rss( worksession, domain, search + "page=%d/" % page )
             works.extend( [ self.parse_work(item) for item in soup('item') ] )
@@ -268,18 +267,18 @@ class DMM:
 
     def rename( self, cid, maker=None ):
 
-        cid_base = re.compile(r'^((?:h_)?\d+)?([a-z]+)(\d+)$')
+        cid_base = re.compile(r'^((?:h_)?\d+)?([a-z]+(?:3d)?)(\d+)([a-z]+)?$')
 
-        def get_num(p,digits=3): return '-{:0{d}d}'.format(int(p[-1]),d=digits)
+        def get_num(p,digits=3): return '-{:0{d}d}'.format(int(p[2]),d=digits)
 
         def parse_tma( parts, d ):
             if parts[0] == '55':
                 if parts[1] == 't':
-                    return "t%s-%s" % ( parts[-1][0:2], parts[-1][-3:] )
+                    return "t%s-%s" % ( parts[2][0:2], parts[2][-3:] )
                 else:
                     return parts[1] + get_num(parts)
             else:
-                return "%s%s-%s" % ( parts[0][-2:], parts[1], parts[-1][-3:] )
+                return "%s%s-%s" % ( parts[0][-2:], parts[1], parts[2][-3:] )
 
         parser = {
             6350 : { 'digits': 1 },
@@ -328,16 +327,16 @@ if __name__ == "__main__":
     dmm = DMM()
     # a = dmm.get_tags()
 
-    for mora in dmm.MORAS:
-        print("Getting %s ... " % mora, end="")
-        # a = dmm.get_actresses(mora)
-        # a = dmm.get_makers(mora)
-        print("Got %d" % len(a))
+    #for mora in dmm.MORAS:
+    #    print("Getting %s ... " % mora, end="")
+    #    a = dmm.get_actresses(mora)
+    #    a = dmm.get_makers(mora)
+    #    print("Got %d" % len(a))
     # a = dmm.get_series('a')
     # print(a)
     # print(len(a))
 
-    # sod = dmm.get_work_page( '45276' )
+    # sod = dmm.get_works( 0, 45276, 100, 10 )
     # print( sod )
     # print( len(sod) )
 
