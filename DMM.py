@@ -1,6 +1,8 @@
 import requests, re
 from bs4 import BeautifulSoup
 
+from datetime import timedelta
+
 class DMM:
     """Website as an object"""
 
@@ -190,7 +192,7 @@ class DMM:
 
         return actresses
 
-    def get_works( self, domain, m_id, count, page=1 ):
+    def get_works( self, domain, m_id, count, page=1, callback=print ):
 
         def get_rss( s, domain, path ):
             RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create/" )
@@ -207,7 +209,7 @@ class DMM:
 
         while len(works) < count:
             soup = get_rss( worksession, domain, search + "page=%d/" % page )
-            works.extend( [ self.parse_work(item) for item in soup('item') ] )
+            for item in soup('item'): works.append( callback( self.parse_work(item) ) )
             page += 1
 
         return works
@@ -244,13 +246,14 @@ class DMM:
         for p in properties: self.insert_id( work, p, item.find(p).string )
 
         work['cid'] = re.search(r'cid=(\w+)', work['link']).group(1)
-        work['date'] = work['date'].split('T')[0]
+        work['released_date'] = work['date'].split('T')[0]
 
         content = BeautifulSoup( item.encoded.string, 'html.parser' )
 
         for info in content('strong'):
             if '分' in info.next_sibling:
-                work['runtime'] = int( info.next_sibling.strip('分') )
+                dur_mins = int( info.next_sibling.strip('分') )
+                work['runtime'] = timedelta( minutes = dur_mins )
                 break
 
         for link in content('a'):
@@ -262,6 +265,8 @@ class DMM:
                 work['actresses'].append( l.group(2) )
             else:
                 self.insert_id( work, l.group(1), l.group(2) )
+
+        work['display_id'] = self.rename( work['cid'], work['maker'] )
 
         return work
 
