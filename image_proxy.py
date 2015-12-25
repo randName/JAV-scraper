@@ -1,6 +1,6 @@
 import http.server, requests
 
-def get_img( p, rear='ps' ):
+def get_img( p, rear='pt' ):
     DOM = ( 'digital/video', '' )
 
     if '?' in p:
