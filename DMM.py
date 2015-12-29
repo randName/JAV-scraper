@@ -16,7 +16,7 @@ class DMM:
     def get_soup( self, domain, page ):
         """Get page as a BeautifulSoup."""
         
-        DOM = ( "digital/videoa/-/", "mono/dvd/-/" )
+        DOM = ( "digital/videoa/-/", "mono/dvd/-/", "" )
         r = requests.get( 'http://www.dmm.co.jp/' + DOM[domain] + page )
         return BeautifulSoup( r.text, 'html.parser' )
 
@@ -88,6 +88,80 @@ class DMM:
 
         return title[0]
 
+    def get_sample_vid_url( self, cid ):
+        """Get URL of sample video given ID"""
+        query = "service/-/flash/=/cid=%s/" % cid
+
+        flv = re.compile(r'flashvars.(\w+) = "?(\w+)"?')
+
+        flashvars = {}
+
+        soup = self.get_soup( 2, query )
+
+        for s in soup.find_all('script',string=True):
+            for fv in flv.finditer(s.string): flashvars[fv.group(1)] = fv.group(2)
+
+        ncid = flashvars['cid']
+
+        return "%s/%s/%s/%s_%s_w.mp4" % (ncid[0],ncid[0:3],ncid,ncid,'sm')
+
+    def rename( self, pid, maker=None ):
+        """Get DVD name from pid"""
+        id_base = re.compile(r'^((?:h_)?\d+)?([a-z]+(?:3d)?)(\d+)([a-z]+)?$')
+
+        def get_num(p,digits=3): return '-{:0{d}d}'.format(int(p[2]),d=digits)
+
+        def parse_tma( parts, d ):
+            if parts[0] == '55':
+                if parts[1] == 't':
+                    return "t%s-%s" % ( parts[2][0:2], parts[2][-3:] )
+                else:
+                    return parts[1] + get_num(parts)
+            else:
+                return "%s%s-%s" % ( parts[0][-2:], parts[1], parts[2][-3:] )
+
+        parser = {
+            6350 : { 'digits': 1 }, 40039 : { 'digits': 4 }, 45667 : { 'digits': 4 },
+            40041 : { 'txt': parse_tma, },
+            45249 : { 'txt': ( lambda p,d: ( 'nsps' if p[1] == 'bnsps' else p[1] ) + get_num(p) ) }
+        }
+
+        makers = {
+            '1'  : True, '13' : True, '53' : 40039, '59' : True, '61' : 40047, '84' : 40071,
+            '118': True, '171': True, '172': 40185, '422': True, '433': True, '436': 45061,
+            'h_068': True, 'h_094': True, 'h_244': True, 'h_254': True, 'h_259': True,
+            'h_422': 45667, 'h_565': True, 'h_606': True, 'h_796': True, 'h_843': True,
+        }
+
+        try:
+            parts = id_base.match(pid).groups()
+        except AttributeError:
+            print("Error: Could not identify a base for %s" % pid )
+            return None
+
+        if not parts[0]:
+            if not maker: maker = True
+            if parts[1] == 'bnsps': maker = 45249
+            if re.match(r'ktk[xp]', parts[1]): maker = 6350
+        elif parts[0].startswith('55'):
+            maker = 40041
+        elif parts[0] in makers:
+            maker = makers[parts[0]]
+
+        if not maker:
+            print("Error: Could not identify a maker for %s" % pid )
+            return None
+
+        try:
+            digits = parser[maker]['digits']
+        except KeyError:
+            digits = 3
+
+        try:
+            return parser[maker]['txt']( parts, digits ).upper()
+        except KeyError:
+            return parts[1].upper() + get_num(parts,digits)
+
     def get_tags( self ):
         """Get tags from DMM genres page"""
         tags = {}
@@ -113,7 +187,7 @@ class DMM:
 
     def get_makers( self, mora ):
 
-        search = 'maker/=/keyword=' + mora + '/' 
+        search = 'maker/=/keyword=%s/' % mora 
         makers = {}
 
         soup = self.get_soup( 0, search )
@@ -142,16 +216,9 @@ class DMM:
 
         return makers
 
-    def get_makers_by_tag( self, t_id ):
+    def get_actresses( self, mora, callback=print ):
 
-        search = "maker/=/article=keyword/id=%d" % t_id
-        soup = self.get_soup( 1, search )
-        return [ self.get_id(m.a) for m in soup.find_all('div',class_=self.D_SMALLTMB) ]
-
-    def get_actresses( self, mora ):
-
-        search = 'actress/=/keyword=' + mora + '/sort=count/' 
-        actresses = {}
+        search = 'actress/=/keyword=%s/sort=count/' % mora
 
         soup = self.get_soup( 0, search )
 
@@ -165,7 +232,7 @@ class DMM:
                 roma = self.get_filename(actress.img)
                 # furi = actress.span.string 
 
-                self.insert_id( actresses, self.get_id(actress), ( name, roma ) )
+                callback( self.get_id(actress), name, roma )
         
             cur_page += 1
             soup = self.get_soup( 0, search + "page=%d/" % cur_page )
@@ -185,12 +252,10 @@ class DMM:
                 name = re.sub('〜','～',name)
                 roma = self.get_filename(actress.img)
 
-                self.insert_id( actresses, self.get_id(actress), ( name, roma ) )
+                callback( self.get_id(actress), name, roma )
 
             cur_page += 1
             soup = self.get_soup( 1, search + "page=%d/" % cur_page )
-
-        return actresses
 
     def get_works( self, domain, m_id, count, page=1, callback=print ):
 
@@ -214,28 +279,6 @@ class DMM:
 
         return works
 
-    def get_series_list( self, mora ):
-
-        search = 'series/=/keyword=' + mora + '/sort=ruby/' 
-        series = {}
-
-        soup = self.get_soup( 0, search )
-
-        # soup.find('div',class_='list-boxcaptside list-boxpagenation group').p.string
-        # soup.find('li',class_='terminal')
-
-        for ser in soup.find_all('div',class_='tx-work mg-b12 left'):
-            strs = [ s for s in ser.stripped_strings ]
-            if len(strs) == 1: strs.append('')
-
-            self.insert_id( series, self.get_id(ser.a), tuple(strs) )
-
-        # soup = self.get_soup( 1, search )
-
-        # soup.find('li',class_='terminal')
-
-        return series
-
     def parse_work( self, item ):
 
         idc = re.compile(r'article=(\w+)/id=(\d+)')
@@ -246,6 +289,7 @@ class DMM:
         for p in properties: self.insert_id( work, p, item.find(p).string )
 
         work['cid'] = re.search(r'cid=(\w+)', work['link']).group(1)
+        work['pid'] = re.search(r'/(video|adult)/(\w+)', work['package']).group(2)
         work['released_date'] = work['date'].split('T')[0]
 
         content = BeautifulSoup( item.encoded.string, 'html.parser' )
@@ -266,67 +310,9 @@ class DMM:
             else:
                 self.insert_id( work, l.group(1), l.group(2) )
 
-        work['display_id'] = self.rename( work['cid'], work['maker'] )
+        work['display_id'] = self.rename( work['pid'], work['maker'] )
 
         return work
-
-    def rename( self, cid, maker=None ):
-
-        cid_base = re.compile(r'^((?:h_)?\d+)?([a-z]+(?:3d)?)(\d+)([a-z]+)?$')
-
-        def get_num(p,digits=3): return '-{:0{d}d}'.format(int(p[2]),d=digits)
-
-        def parse_tma( parts, d ):
-            if parts[0] == '55':
-                if parts[1] == 't':
-                    return "t%s-%s" % ( parts[2][0:2], parts[2][-3:] )
-                else:
-                    return parts[1] + get_num(parts)
-            else:
-                return "%s%s-%s" % ( parts[0][-2:], parts[1], parts[2][-3:] )
-
-        parser = {
-            6350 : { 'digits': 1 },
-            40039 : { 'digits': 4 }, 45667 : { 'digits': 4 },
-            40041 : { 'txt': parse_tma, },
-            45249 : { 'txt': ( lambda p,d: ( 'nsps' if p[1] == 'bnsps' else p[1] ) + get_num(p) ) }
-        }
-
-        makers = {
-            '1'  : True, '13' : True, '53' : 40039, '59' : True, '61' : 40047, '84' : 40071,
-            '118': True, '171': True, '172': 40185, '422': True, '433': True, '436': 45061,
-            'h_068': True, 'h_094': True, 'h_244': True, 'h_254': True, 'h_259': True,
-            'h_422': 45667, 'h_565': True, 'h_606': True, 'h_796': True, 'h_843': True,
-        }
-
-        try:
-            parts = cid_base.match(cid).groups()
-        except AttributeError:
-            print("Error: Could not identify a base for %s" % (cid,) )
-            return None
-
-        if not parts[0]:
-            maker = True
-            if parts[1] == 'bnsps': maker = 45249
-            if re.match(r'ktk[xp]', parts[1]): maker = 6350
-        elif parts[0].startswith('55'):
-            maker = 40041
-        elif parts[0] in makers:
-            maker = makers[parts[0]]
-
-        if not maker:
-            print("Error: Could not identify a maker for %s" % (cid,) )
-            return None
-
-        try:
-            digits = parser[maker]['digits']
-        except KeyError:
-            digits = 3
-
-        try:
-            return parser[maker]['txt']( parts, digits ).upper()
-        except KeyError:
-            return parts[1].upper() + get_num(parts,digits)
 
 if __name__ == "__main__":
     dmm = DMM()
@@ -341,7 +327,14 @@ if __name__ == "__main__":
     # print(a)
     # print(len(a))
 
-    # sod = dmm.get_works( 0, 45276, 100, 10 )
+    def cb( v ):
+        print( v )
+        # print( "%s %s" % ( v['cid'], v['pid'] ) )
+
+    # dmm.get_works( 1, 45276, 30, callback=cb )
+    # dmm.get_works( 0, 1509, 10, callback=cb )
+    # dmm.get_works( 1, 4469, 10, callback=cb )
+    # print( dmm.get_sample_vid_url( '1sdde00428' ) )
     # print( sod )
     # print( len(sod) )
 
