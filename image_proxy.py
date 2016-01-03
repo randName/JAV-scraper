@@ -1,14 +1,26 @@
 import http.server, requests
+from urllib.parse import urlparse, parse_qs
 
-def get_img( p, rear='pt' ):
-    DOM = ( 'digital/video', '' )
+def get_img( path ):
+    DOM = ( 'digital/video', 'mono/movie/adult' )
 
-    if '?' in p:
-        ps = p.split('?')
-        p = ps[0]
-        if ps[1]: rear = ps[1]
+    p = urlparse(path)
 
-    q = "http://pics.dmm.co.jp/%s/%s/%s%s.jpg" % ( DOM[0], p, p, rear )
+    l = p.path
+
+    if l == 'favicon.ico': return None
+
+    s = 'pt'
+    d = 0
+
+    if '=' in p.query:
+        qs = parse_qs(p.query)
+        if 'd' in qs: d = int(qs['d'][0])
+        if 's' in qs: s = qs['s'][0]
+    elif p.query:
+        s = p.query
+
+    q = "http://pics.dmm.co.jp/%s/%s/%s%s.jpg" % ( DOM[d], l, l, s )
     r = requests.get( q, allow_redirects=False )
 
     if r.status_code == 200:
