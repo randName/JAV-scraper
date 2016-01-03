@@ -51,16 +51,6 @@ class DMM:
         except AttributeError:
             return 0
 
-    def insert_id( self, dic, key, data ):
-        """Insert data into dictionary"""
-        if not key: return None
-        if key not in dic:
-            dic[key] = data
-        elif dic[key] != data:
-            print("Mismatch found with ID %s:" % (key))
-            print(dic[key])
-            print(data)
-
     def get_count( self, domain, article, a_id ):
         """Get total work count of given ID"""
         query = "list/=/article=%s/id=%d/" % ( article, a_id )
@@ -162,9 +152,17 @@ class DMM:
         except KeyError:
             return parts[1].upper() + get_num(parts,digits)
 
-    def get_tags( self ):
-        """Get tags from DMM genres page"""
-        tags = {}
+    def get_keywords( self ):
+        """Get keywords from DMM genres page"""
+
+        def tag(link, category):
+            cats = ('シチュエーション','ＡＶ女優タイプ','コスチューム','ジャンル','プレイ','その他')
+
+            _id = self.get_id(link)
+            if not _id: return None
+            return { '_id': _id, 'name': link.string, 'category': cats.index(category) }
+
+        tags = []
 
         soup = self.get_soup( 0, 'genre/' )
 
@@ -173,48 +171,49 @@ class DMM:
             if category == "おすすめジャンル": continue
             if category == "タイプ": category = "ＡＶ女優タイプ"
 
-            for link in section.ul('a'):
-                self.insert_id( tags, self.get_id(link), ( link.string, category ) )
+            tags.extend([ tag(link,category) for link in section.ul('a') ])
 
         soup = self.get_soup( 1, 'genre/' )
 
         for section in soup.find_all('table', class_='sect02'):
             category = section.get('summary')
-            for link in section('a'):
-                self.insert_id( tags, self.get_id(link), ( link.string, category ) )
+            tags.extend([ tag(link,category) for link in section('a') ])
 
-        return tags
+        return list(filter(None.__ne__, tags))
 
-    def get_makers( self, mora ):
+    def get_makers( self, mora, callback=print ):
 
         search = 'maker/=/keyword=%s/' % mora 
-        makers = {}
 
         soup = self.get_soup( 0, search )
 
         for maker in soup.find_all('div', class_=self.D_SMALLTMB):
+            _id = self.get_id(maker.a)
+            if not _id: continue
             name = maker.find(class_='d-ttllarge').string
             roma = self.get_filename(maker.img)
             desc = self.get_string(maker.p).strip()
 
-            self.insert_id( makers, self.get_id(maker.a), ( name, roma, desc ) )
+            callback({ '_id': _id, 'name': name, 'roma': roma, 'description': desc })
 
         soup = self.get_soup( 1, search )
 
         for maker in soup.find_all('td',class_='w50'):
+            _id = self.get_id(maker.a)
+            if not _id: continue
             name = maker.img.get('alt')
             roma = self.get_filename(maker.img)
             desc = maker.br.string.strip()
             desc = re.sub('〜','～',desc)
 
-            self.insert_id( makers, self.get_id(maker.a), ( name, roma, desc ) )
+            callback({ '_id': _id, 'name': name, 'roma': roma, 'description': desc })
 
         extra_base = soup.find(class_='list-table mg-t12')
         if extra_base:
             for maker in extra_base('a'):
-                self.insert_id( makers, self.get_id(maker.a), ( maker.string, '', '' ) )
-
-        return makers
+                _id = self.get_id(maker)
+                if not _id: continue
+                callback({ '_id': _id, 'name': maker.string })
 
     def get_actresses( self, mora, callback=print ):
 
@@ -230,9 +229,9 @@ class DMM:
             for actress in soup.find('ul',class_='d-item act-box-100 group')('a'):
                 name = actress.img.get('alt')
                 roma = self.get_filename(actress.img)
-                # furi = actress.span.string 
+                furi = actress.span.string 
 
-                callback( self.get_id(actress), name, roma )
+                callback( { '_id': self.get_id(actress), 'name': name, 'roma': roma, 'furi': furi } )
         
             cur_page += 1
             soup = self.get_soup( 0, search + "page=%d/" % cur_page )
@@ -252,7 +251,7 @@ class DMM:
                 name = re.sub('〜','～',name)
                 roma = self.get_filename(actress.img)
 
-                callback( self.get_id(actress), name, roma )
+                callback( { '_id': self.get_id(actress), 'name': name, 'roma': roma } )
 
             cur_page += 1
             soup = self.get_soup( 1, search + "page=%d/" % cur_page )
@@ -284,9 +283,9 @@ class DMM:
         idc = re.compile(r'article=(\w+)/id=(\d+)')
         properties = ( 'title', 'description', 'link', 'package', 'date' )
 
-        work = { 'tags': [], 'actresses': [] }
+        work = { 'keywords': [], 'actresses': [] }
 
-        for p in properties: self.insert_id( work, p, item.find(p).string )
+        for p in properties: work[p] = item.find(p).string
 
         work['cid'] = re.search(r'cid=(\w+)', work['link']).group(1)
         work['pid'] = re.search(r'/(video|adult)/(\w+)', work['package']).group(2)
@@ -304,20 +303,40 @@ class DMM:
             l = idc.search( link.get('href') )
             if not l: continue
             if l.group(1) == 'keyword':
-                work['tags'].append( l.group(2) )
+                work['keywords'].append( l.group(2) )
             elif l.group(1) == 'actress':
                 work['actresses'].append( l.group(2) )
             else:
-                self.insert_id( work, l.group(1), l.group(2) )
+                work[l.group(1)] = l.group(2)
 
         work['display_id'] = self.rename( work['pid'], work['maker'] )
 
         return work
 
+    def search_dmm( self, terms ):
+
+        soup = self.get_soup( 2, 'search/=/searchstr=%s/' % '%20'.join(terms) )
+
+        for a in soup.find('div',class_='d-item')('a'):
+            link = a.get('href') 
+
+            for d in ('digital','mono'):
+                if d not in link: continue
+                try:
+                    cid = re.search(r'cid=(\w+)', link).group(1)
+                except AttributeError:
+                    continue
+
+                for t in terms:
+                    if t not in cid: break
+                else:
+                    print( cid )
+
 if __name__ == "__main__":
     dmm = DMM()
-    # a = dmm.get_tags()
+    # print( dmm.get_keywords() )
 
+    dmm.search_dmm(('star','600'))
     #for mora in dmm.MORAS:
     #    print("Getting %s ... " % mora, end="")
     #    a = dmm.get_actresses(mora)
@@ -327,8 +346,7 @@ if __name__ == "__main__":
     # print(a)
     # print(len(a))
 
-    def cb( v ):
-        print( v )
+    #def cb( v ): print( v )
         # print( "%s %s" % ( v['cid'], v['pid'] ) )
 
     # dmm.get_works( 1, 45276, 30, callback=cb )
