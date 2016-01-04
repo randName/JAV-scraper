@@ -15,9 +15,11 @@ class DMM:
 
     def get_soup( self, domain, page ):
         """Get page as a BeautifulSoup."""
-        
-        DOM = ( "digital/videoa/-/", "mono/dvd/-/", "" )
-        r = requests.get( 'http://www.dmm.co.jp/' + DOM[domain] + page )
+        DOM = ( "digital/videoa/-/", "mono/dvd/-/" )
+
+        d = DOM[domain] if domain is not None  else ''
+        r = requests.get( 'http://www.dmm.co.jp/%s%s' % ( d, page ) )
+
         return BeautifulSoup( r.text, 'html.parser' )
 
     def get_id( self, a ):
@@ -43,40 +45,24 @@ class DMM:
         else:
             return name[0]
 
-    def get_pagenum( self, a ):
-        """Get page number from <a> tag href."""
-        pgn = re.compile(r'/page=(\d+)')
-        try:
-            return int(pgn.search(a.get('href')).group(1))
-        except AttributeError:
-            return 0
+    def get_article( self, domain, article, a_id ):
+        """Get info of given ID"""
+        soup = self.get_soup( domain, "list/=/article=%s/id=%d/" % ( article, a_id ) )
+        item = {}
 
-    def get_count( self, domain, article, a_id ):
-        """Get total work count of given ID"""
-        query = "list/=/article=%s/id=%d/" % ( article, a_id )
+        t = re.sub( r' -[^-]+- DMM.R18$', '', soup.title.string )
+        pg = soup.find('div',class_=self.L_PAGE)
 
-        soup = self.get_soup( domain, query )
-        info = soup.find('div',class_=self.L_PAGE)
-        if info: return int(re.match(r'(\d+)',info.p.string).group(1))
-        return 0
-                    
-    def get_title( self, article, a_id ):
-        """Get title of given ID"""
-        query = "list/=/article=%s/id=%s/" % ( article, a_id )
+        item['count'] = int(re.match(r'(\d+)',pg.p.string).group(1)) if pg else 0
 
-        title = []
+        if article == 'actress' or article == 'director':
+            ft = re.match( r'(.+)\(([^)]*)\)$', t )
+            item['name'] = ft.group(1)
+            item['furi'] = ft.group(2)
+        else:
+            item['name'] = t
 
-        for domain in ( 0, 1 ):
-            soup = self.get_soup( domain, query )
-            t = soup.title.string.split(' - ')[:-2]
-            if len(t) == 1:
-                if article == 'actress':
-                    t[0] = re.sub( r'\([^)]*\)', '', t[0] )
-                title.append(t[0])
-            else:
-                title.append(' - '.join(t))
-
-        return title[0]
+        return item
 
     def get_sample_vid_url( self, cid ):
         """Get URL of sample video given ID"""
@@ -217,6 +203,13 @@ class DMM:
 
     def get_actresses( self, mora, callback=print ):
 
+        def get_pagenum( a ):
+            pgn = re.compile(r'/page=(\d+)')
+            try:
+                return int(pgn.search(a.get('href')).group(1))
+            except AttributeError:
+                return 0
+
         search = 'actress/=/keyword=%s/sort=count/' % mora
 
         soup = self.get_soup( 0, search )
@@ -240,7 +233,7 @@ class DMM:
 
         page_nums = soup.find('div',class_=self.D_PAGE)
 
-        num_pages = max( [ self.get_pagenum(p) for p in page_nums('a') ] )
+        num_pages = max( [ get_pagenum(p) for p in page_nums('a') ] )
         if num_pages == 0 and page_nums.span : num_pages = 1
 
         cur_page = 1
@@ -278,20 +271,20 @@ class DMM:
 
         return works
 
-    def parse_work( self, item ):
+    def parse_work_rss( self, soup ):
 
         idc = re.compile(r'article=(\w+)/id=(\d+)')
         properties = ( 'title', 'description', 'link', 'package', 'date' )
 
         work = { 'keywords': [], 'actresses': [] }
 
-        for p in properties: work[p] = item.find(p).string
+        for p in properties: work[p] = soup.find(p).string
 
         work['cid'] = re.search(r'cid=(\w+)', work['link']).group(1)
         work['pid'] = re.search(r'/(video|adult)/(\w+)', work['package']).group(2)
         work['released_date'] = work['date'].split('T')[0]
 
-        content = BeautifulSoup( item.encoded.string, 'html.parser' )
+        content = BeautifulSoup( soup.encoded.string, 'html.parser' )
 
         for info in content('strong'):
             if '分' in info.next_sibling:
@@ -336,7 +329,7 @@ if __name__ == "__main__":
     dmm = DMM()
     # print( dmm.get_keywords() )
 
-    dmm.search_dmm(('star','600'))
+    #dmm.search_dmm(('star','600'))
     #for mora in dmm.MORAS:
     #    print("Getting %s ... " % mora, end="")
     #    a = dmm.get_actresses(mora)
