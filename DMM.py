@@ -45,6 +45,9 @@ class DMM:
         else:
             return name[0]
 
+    def normalize( self, t ):
+        return re.sub('〜','～',t)
+
     def get_article( self, domain, article, a_id ):
         """Get info of given ID"""
         soup = self.get_soup( domain, "list/=/article=%s/id=%d/" % ( article, a_id ) )
@@ -170,29 +173,29 @@ class DMM:
     def get_makers( self, mora, callback=print ):
 
         search = 'maker/=/keyword=%s/' % mora 
+        m = {}
 
         soup = self.get_soup( 0, search )
 
         for maker in soup.find_all('div', class_=self.D_SMALLTMB):
-            _id = self.get_id(maker.a)
-            if not _id: continue
-            name = maker.find(class_='d-ttllarge').string
-            roma = self.get_filename(maker.img)
-            desc = self.get_string(maker.p).strip()
+            m['_id'] = self.get_id(maker.a)
+            if not m['_id']: continue
+            m['name'] = maker.find(class_='d-ttllarge').string
+            m['roma'] = self.get_filename(maker.img)
+            m['desc'] = self.get_string(maker.p).strip()
 
-            callback({ '_id': _id, 'name': name, 'roma': roma, 'description': desc })
+            callback( m )
 
         soup = self.get_soup( 1, search )
 
         for maker in soup.find_all('td',class_='w50'):
-            _id = self.get_id(maker.a)
-            if not _id: continue
-            name = maker.img.get('alt')
-            roma = self.get_filename(maker.img)
-            desc = maker.br.string.strip()
-            desc = re.sub('〜','～',desc)
+            m['_id'] = self.get_id(maker.a)
+            if not m['_id']: continue
+            m['name'] = maker.img.get('alt')
+            m['roma'] = self.get_filename(maker.img)
+            m['desc'] = dmm.normalize(maker.br.string.strip())
 
-            callback({ '_id': _id, 'name': name, 'roma': roma, 'description': desc })
+            callback( m )
 
         extra_base = soup.find(class_='list-table mg-t12')
         if extra_base:
@@ -211,6 +214,7 @@ class DMM:
                 return 0
 
         search = 'actress/=/keyword=%s/sort=count/' % mora
+        a = {}
 
         soup = self.get_soup( 0, search )
 
@@ -220,11 +224,12 @@ class DMM:
         
         while cur_page <= count[3]:
             for actress in soup.find('ul',class_='d-item act-box-100 group')('a'):
-                name = actress.img.get('alt')
-                roma = self.get_filename(actress.img)
-                furi = actress.span.string 
+                a['_id'] = self.get_id(actress)
+                a['name'] = actress.img.get('alt')
+                a['roma'] = self.get_filename(actress.img)
+                a['furi'] = actress.span.string 
 
-                callback( { '_id': self.get_id(actress), 'name': name, 'roma': roma, 'furi': furi } )
+                callback( a )
         
             cur_page += 1
             soup = self.get_soup( 0, search + "page=%d/" % cur_page )
@@ -240,33 +245,34 @@ class DMM:
 
         while cur_page <= num_pages:
             for actress in soup.find('ul',class_='act-box-100 group mg-b20')('a'):
-                name = actress.string
-                name = re.sub('〜','～',name)
-                roma = self.get_filename(actress.img)
+                a['_id'] = self.get_id(actress)
+                a['name'] = dmm.normalize(actress.string)
+                a['roma'] = self.get_filename(actress.img)
 
-                callback( { '_id': self.get_id(actress), 'name': name, 'roma': roma } )
+                callback( a )
 
             cur_page += 1
             soup = self.get_soup( 1, search + "page=%d/" % cur_page )
 
     def get_works( self, domain, m_id, count, page=1, callback=print ):
 
-        def get_rss( s, domain, path ):
-            RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create/" )
+        def get_rss( s, domain, q ):
+            RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create" )
+            path = "article=maker/sort=release_date"
 
-            r = s.get( 'http://www.dmm.co.jp/' + RSS[domain] + path )
-            r.encoding = 'utf-8'
+            print( "%d %s:" % (domain, q), end="\t" )
+            r = s.get( 'http://www.dmm.co.jp/%s/%s/%s' % ( RSS[domain], path, q ) )
             print( r.elapsed, end="\r" )
-            return BeautifulSoup( r.text, 'xml' )
 
-        search = "/article=maker/sort=release_date/id=%d/" % m_id
+            r.encoding = 'utf-8'
+            return BeautifulSoup( r.text, 'xml' )
 
         works = []
         worksession = requests.Session()
 
         while len(works) < count:
-            soup = get_rss( worksession, domain, search + "page=%d/" % page )
-            for item in soup('item'): works.append( callback( self.parse_work(item) ) )
+            soup = get_rss( worksession, domain, "id=%d/page=%d/" % ( m_id, page ) )
+            for item in soup('item'): works.append( callback( self.parse_work_rss(item) ) )
             page += 1
 
         return works
@@ -339,8 +345,8 @@ if __name__ == "__main__":
     # print(a)
     # print(len(a))
 
-    #def cb( v ): print( v )
-        # print( "%s %s" % ( v['cid'], v['pid'] ) )
+    #def cb( v ):
+    #    print( "%s %s" % ( v['cid'], v['pid'] ) )
 
     # dmm.get_works( 1, 45276, 30, callback=cb )
     # dmm.get_works( 0, 1509, 10, callback=cb )
