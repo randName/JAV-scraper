@@ -9,16 +9,20 @@ class DMM:
     MORAS = [ c.strip()+v for c in ' kstnhmr' for v in 'aiueo']
     MORAS.extend(['ya','yu','yo','wa','wo','nn'])
 
-    D_SMALLTMB = 'd-boxpicdata d-smalltmb' 
     L_PAGE = 'list-boxcaptside list-boxpagenation'
-    D_PAGE = 'd-boxcaptside d-boxpagenation'
 
-    def get_soup( self, domain, page ):
+    ART_ID = re.compile(r'article=(\w+)/id=(\d+)')
+
+    DOMAIN = ( 'digital/videoa', 'mono/dvd' )
+
+    def normalize( self, t ):
+        return re.sub('〜','～',t)
+
+    def get_soup( self, page, domain=None ):
         """Get page as a BeautifulSoup."""
-        DOM = ( "digital/videoa/-/", "mono/dvd/-/" )
 
-        d = DOM[domain] if domain is not None  else ''
-        r = requests.get( 'http://www.dmm.co.jp/%s%s' % ( d, page ) )
+        if domain: page = '%s/-/%s' % ( domain, page )
+        r = requests.get( 'http://www.dmm.co.jp/%s' % page )
 
         return BeautifulSoup( r.text, 'html.parser' )
 
@@ -45,13 +49,10 @@ class DMM:
         else:
             return name[0]
 
-    def normalize( self, t ):
-        return re.sub('〜','～',t)
-
     def get_article( self, domain, article, a_id ):
-        """Get info of given ID"""
-        soup = self.get_soup( domain, "list/=/article=%s/id=%d/" % ( article, a_id ) )
+        """Get info of given ID."""
         item = {}
+        soup = self.get_soup( "list/=/article=%s/id=%d/" % ( article, a_id ), domain )
 
         t = re.sub( r' -[^-]+- DMM.R18$', '', soup.title.string )
         pg = soup.find('div',class_=self.L_PAGE)
@@ -67,22 +68,45 @@ class DMM:
 
         return item
 
-    def get_sample_vid_url( self, cid ):
-        """Get URL of sample video given ID"""
-        query = "service/-/flash/=/cid=%s/" % cid
+    def get_work_page( self, domain, cid ):
+        """Get info page of given CID."""
+        work = {}
+        soup = self.get_soup( "detail/=/cid=%s/" % cid, domain )
+        detail = soup.find('div',class_='page-detail').table
 
+        work['sample_images'] = len( detail.find('div',id='sample-image-block')('a') ) 
+
+        for cell in detail.table('td'):
+            try:
+                d = self.ART_ID.search( cell.a.get('href') ).groups()
+            except AttributeError:
+                continue
+            if d[0] == 'director': work['director'] = d[1]
+
+        return work
+
+    def get_related( self, domain, cid ):
+        """Get related CIDs and their domains"""
+        cds = re.compile(r'dmm.co.jp/(.+)/-/detail/=/cid=(\w+)')
+        p = 'misc/-/mutual-link/ajax-index/=/'
+
+        soup = self.get_soup('%s/cid=%s/service=%s/shop=%s/'%tuple([p,cid]+domain.split('/')))
+
+        return [ cds.search( l.a.get('href') ).groups() for l in soup('li') ]
+
+    def get_sample_vid_id( self, cid ):
+        """Get sample video ID of given CID"""
         flv = re.compile(r'flashvars.(\w+) = "?(\w+)"?')
 
-        flashvars = {}
-
-        soup = self.get_soup( 2, query )
+        # flashvars = {}
+        soup = self.get_soup( "service/-/flash/=/cid=%s/" % cid )
 
         for s in soup.find_all('script',string=True):
-            for fv in flv.finditer(s.string): flashvars[fv.group(1)] = fv.group(2)
+            for fv in flv.finditer(s.string):
+                if fv.group(1) == 'cid': return fv.group(2)
+                # flashvars[fv.group(1)] = fv.group(2)
 
-        ncid = flashvars['cid']
-
-        return "%s/%s/%s/%s_%s_w.mp4" % (ncid[0],ncid[0:3],ncid,ncid,'sm')
+        # return flashvars['cid']
 
     def rename( self, pid, maker=None ):
         """Get DVD name from pid"""
@@ -153,7 +177,7 @@ class DMM:
 
         tags = []
 
-        soup = self.get_soup( 0, 'genre/' )
+        soup = self.get_soup( 'genre/', self.DOMAIN[0] )
 
         for section in soup.find_all('div', id=re.compile('^list')):
             category = section.div.string
@@ -162,7 +186,7 @@ class DMM:
 
             tags.extend([ tag(link,category) for link in section.ul('a') ])
 
-        soup = self.get_soup( 1, 'genre/' )
+        soup = self.get_soup( 'genre/', self.DOMAIN[1] )
 
         for section in soup.find_all('table', class_='sect02'):
             category = section.get('summary')
@@ -172,30 +196,34 @@ class DMM:
 
     def get_makers( self, mora, callback=print ):
 
-        search = 'maker/=/keyword=%s/' % mora 
-        m = {}
+        def parse_maker( maker, domain ):
+            m = {}
 
-        soup = self.get_soup( 0, search )
-
-        for maker in soup.find_all('div', class_=self.D_SMALLTMB):
             m['_id'] = self.get_id(maker.a)
-            if not m['_id']: continue
-            m['name'] = maker.find(class_='d-ttllarge').string
+            if not m['_id']: return None
+
             m['roma'] = self.get_filename(maker.img)
-            m['desc'] = self.get_string(maker.p).strip()
 
-            callback( m )
+            if domain == self.DOMAIN[0] :
+                m['name'] = maker.find(class_='d-ttllarge').string
+                m['desc'] = self.get_string(maker.p).strip()
+            elif domain == self.DOMAIN[1]:
+                m['name'] = maker.img.get('alt')
+                m['desc'] = dmm.normalize(maker.br.string.strip())
 
-        soup = self.get_soup( 1, search )
+            return m
+
+        search = 'maker/=/keyword=%s/' % mora 
+
+        soup = self.get_soup( search, self.DOMAIN[0] )
+
+        for maker in soup.find_all('div', class_='d-boxpicdata d-smalltmb'):
+            callback( parse_maker( maker, self.DOMAIN[0] ) )
+
+        soup = self.get_soup( search, self.DOMAIN[1] )
 
         for maker in soup.find_all('td',class_='w50'):
-            m['_id'] = self.get_id(maker.a)
-            if not m['_id']: continue
-            m['name'] = maker.img.get('alt')
-            m['roma'] = self.get_filename(maker.img)
-            m['desc'] = dmm.normalize(maker.br.string.strip())
-
-            callback( m )
+            callback( parse_maker( maker, self.DOMAIN[1] ) )
 
         extra_base = soup.find(class_='list-table mg-t12')
         if extra_base:
@@ -213,10 +241,25 @@ class DMM:
             except AttributeError:
                 return 0
 
-        search = 'actress/=/keyword=%s/sort=count/' % mora
-        a = {}
+        def parse_actress( actress, domain ):
+            a = {}
 
-        soup = self.get_soup( 0, search )
+            a['_id'] = self.get_id(actress)
+            if not a['_id']: return None
+
+            a['roma'] = self.get_filename(actress.img)
+
+            if domain == self.DOMAIN[0]:
+                a['name'] = actress.img.get('alt')
+                a['furi'] = actress.span.string 
+            elif domain == self.DOMAIN[1]:
+                a['name'] = dmm.normalize(actress.string)
+
+            return a
+
+        search = 'actress/=/keyword=%s/sort=count/' % mora
+
+        soup = self.get_soup( search, self.DOMAIN[0] )
 
         totals = soup.find('div',class_=self.L_PAGE+' group')
         count = [ int(x) for x in re.findall(r'\d+', totals.p.string) ]
@@ -224,19 +267,14 @@ class DMM:
         
         while cur_page <= count[3]:
             for actress in soup.find('ul',class_='d-item act-box-100 group')('a'):
-                a['_id'] = self.get_id(actress)
-                a['name'] = actress.img.get('alt')
-                a['roma'] = self.get_filename(actress.img)
-                a['furi'] = actress.span.string 
-
-                callback( a )
+                callback( parse_actress( actress, self.DOMAIN[0] ) )
         
             cur_page += 1
-            soup = self.get_soup( 0, search + "page=%d/" % cur_page )
+            soup = self.get_soup( search + "page=%d/" % cur_page, self.DOMAIN[0] )
 
-        soup = self.get_soup( 1, search )
+        soup = self.get_soup( search, self.DOMAIN[1] )
 
-        page_nums = soup.find('div',class_=self.D_PAGE)
+        page_nums = soup.find('div',class_='d-boxcaptside d-boxpagenation')
 
         num_pages = max( [ get_pagenum(p) for p in page_nums('a') ] )
         if num_pages == 0 and page_nums.span : num_pages = 1
@@ -245,76 +283,72 @@ class DMM:
 
         while cur_page <= num_pages:
             for actress in soup.find('ul',class_='act-box-100 group mg-b20')('a'):
-                a['_id'] = self.get_id(actress)
-                a['name'] = dmm.normalize(actress.string)
-                a['roma'] = self.get_filename(actress.img)
-
-                callback( a )
+                callback( parse_actress( actress, self.DOMAIN[1] ) )
 
             cur_page += 1
-            soup = self.get_soup( 1, search + "page=%d/" % cur_page )
+            soup = self.get_soup( search + "page=%d/" % cur_page, self.DOMAIN[1] )
 
     def get_works( self, domain, m_id, count, page=1, callback=print ):
 
-        def get_rss( s, domain, q ):
-            RSS = ( "digital/videoa/-/list/rss/=", "mono/dvd/-/list/=/rss=create" )
-            path = "article=maker/sort=release_date"
+        def get_rss( s, d, q ):
 
-            print( "%d %s:" % (domain, q), end="\t" )
-            r = s.get( 'http://www.dmm.co.jp/%s/%s/%s' % ( RSS[domain], path, q ) )
+            URL = 'http://www.dmm.co.jp/{0}/-/list/{1}/article=maker/sort=release_date/{2}/' 
+            RSS = ( "rss/=", "=/rss=create" )
+
+            print( "%s %s:" % (d, q), end="\t" )
+            r = s.get( URL.format( d, RSS[self.DOMAIN.index(d)], q ) )
             print( r.elapsed, end="\r" )
 
             r.encoding = 'utf-8'
             return BeautifulSoup( r.text, 'xml' )
 
+        def parse_work_rss( soup ):
+
+            properties = ( 'title', 'description', 'link', 'package', 'date' )
+
+            work = { 'keywords': [], 'actresses': [] }
+
+            for p in properties: work[p] = soup.find(p).string
+
+            work['cid'] = re.search(r'cid=(\w+)', work['link']).group(1)
+            work['pid'] = re.search(r'/(video|adult)/(\w+)', work['package']).group(2)
+            work['released_date'] = work['date'].split('T')[0]
+
+            content = BeautifulSoup( soup.encoded.string, 'html.parser' )
+
+            for info in content('strong'):
+                if '分' in info.next_sibling:
+                    dur_mins = int( info.next_sibling.strip('分') )
+                    work['runtime'] = timedelta( minutes = dur_mins )
+                    break
+
+            for link in content('a'):
+                l = self.ART_ID.search( link.get('href') )
+                if not l: continue
+                if l.group(1) == 'keyword':
+                    work['keywords'].append( l.group(2) )
+                elif l.group(1) == 'actress':
+                    work['actresses'].append( l.group(2) )
+                else:
+                    work[l.group(1)] = l.group(2)
+
+            work['display_id'] = self.rename( work['pid'], work['maker'] )
+
+            return work
+
         works = []
         worksession = requests.Session()
 
         while len(works) < count:
-            soup = get_rss( worksession, domain, "id=%d/page=%d/" % ( m_id, page ) )
-            for item in soup('item'): works.append( callback( self.parse_work_rss(item) ) )
+            soup = get_rss( worksession, domain, "id=%d/page=%d" % ( m_id, page ) )
+            for item in soup('item'): works.append( callback( parse_work_rss(item) ) )
             page += 1
 
         return works
 
-    def parse_work_rss( self, soup ):
-
-        idc = re.compile(r'article=(\w+)/id=(\d+)')
-        properties = ( 'title', 'description', 'link', 'package', 'date' )
-
-        work = { 'keywords': [], 'actresses': [] }
-
-        for p in properties: work[p] = soup.find(p).string
-
-        work['cid'] = re.search(r'cid=(\w+)', work['link']).group(1)
-        work['pid'] = re.search(r'/(video|adult)/(\w+)', work['package']).group(2)
-        work['released_date'] = work['date'].split('T')[0]
-
-        content = BeautifulSoup( soup.encoded.string, 'html.parser' )
-
-        for info in content('strong'):
-            if '分' in info.next_sibling:
-                dur_mins = int( info.next_sibling.strip('分') )
-                work['runtime'] = timedelta( minutes = dur_mins )
-                break
-
-        for link in content('a'):
-            l = idc.search( link.get('href') )
-            if not l: continue
-            if l.group(1) == 'keyword':
-                work['keywords'].append( l.group(2) )
-            elif l.group(1) == 'actress':
-                work['actresses'].append( l.group(2) )
-            else:
-                work[l.group(1)] = l.group(2)
-
-        work['display_id'] = self.rename( work['pid'], work['maker'] )
-
-        return work
-
     def search_dmm( self, terms ):
 
-        soup = self.get_soup( 2, 'search/=/searchstr=%s/' % '%20'.join(terms) )
+        soup = self.get_soup( 'search/=/searchstr=%s/' % '%20'.join(terms) )
 
         for a in soup.find('div',class_='d-item')('a'):
             link = a.get('href') 
@@ -332,6 +366,10 @@ class DMM:
                     print( cid )
 
 if __name__ == "__main__":
+
+    def cb( v ):
+        print( "%s %s" % ( v['cid'], v['pid'] ) )
+
     dmm = DMM()
     # print( dmm.get_keywords() )
 
@@ -341,23 +379,16 @@ if __name__ == "__main__":
     #    a = dmm.get_actresses(mora)
     #    a = dmm.get_makers(mora)
     #    print("Got %d" % len(a))
-    # a = dmm.get_series('a')
-    # print(a)
-    # print(len(a))
 
-    #def cb( v ):
-    #    print( "%s %s" % ( v['cid'], v['pid'] ) )
-
-    # dmm.get_works( 1, 45276, 30, callback=cb )
-    # dmm.get_works( 0, 1509, 10, callback=cb )
-    # dmm.get_works( 1, 4469, 10, callback=cb )
-    # print( dmm.get_sample_vid_url( '1sdde00428' ) )
+    # dmm.get_works( dmm.DOMAIN[1], 45276, 30, callback=cb )
+    # dmm.get_works( dmm.DOMAIN[0], 1509, 10, callback=cb )
+    # dmm.get_works( dmm.DOMAIN[1], 4469, 10, callback=cb )
+    # print( dmm.get_related( 'digital/videoa', '1sdde00308' ) )
+    # print( dmm.get_work_page( 'mono/dvd', '1sdde308' ) )
+        
     # print( sod )
     # print( len(sod) )
 
     # rct = dmm.get_work_page( '45371' )
     # wnz = dmm.get_work_page( '6304' )
-    # print([ w['cid'] for w in mkr[0] ])
-    # print([ w['cid'] for w in mkr[1] ])
-
     # kv = dmm.get_work_page('46283')
