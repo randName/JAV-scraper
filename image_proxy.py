@@ -1,17 +1,12 @@
-import http.server, requests
-from urllib.parse import urlparse, parse_qs
+import http.server
+import requests
+import os
 
-def get_img( path ):
+def get_dmm( sub, path ):
 
-    r = requests.get( "http://pics.dmm.co.jp/" + path, allow_redirects=False )
+    r = requests.get( "http://%s.dmm.co.jp/%s" % ( sub, path ), allow_redirects=False )
 
     return r.content if r.status_code == 200 else None
-
-def empty(s):
-    s.send_header("Content-type", "text/html")
-    s.end_headers()
-    page = "<html><head><title>t</title></head><body>%s</body></html>" % s.path
-    s.wfile.write(page.encode())
 
 class DMMHandler( http.server.SimpleHTTPRequestHandler ):
 
@@ -21,24 +16,28 @@ class DMMHandler( http.server.SimpleHTTPRequestHandler ):
         s.end_headers()
 
     def do_GET(s):
-        s.send_response(200)
+        rq = None
 
-        if '.jpg' in s.path:
-            s.send_header("Content-type", "image/jpeg")
+        if s.path.endswith('.jpg'):
+            ctype = 'image/jpeg'
+            rq = get_dmm( 'pics', s.path )
+
+        elif s.path.endswith('.mp4'):
+            ctype = 'video/mp4'
+            rq = get_dmm( 'cc3001', s.path )
+
+        if rq:
+            s.send_response(200)
+            s.send_header('Content-type', ctype)
             s.end_headers()
-
-            img = get_img( s.path )
-            s.wfile.write( img if img else b'\xff\xd8\xff\xd9' )
-
-        elif '.mp4' in s.path:
-            s.send_header("Content-type", "video/mp4")
-            s.end_headers()
-
+            s.wfile.write( rq )
         else:
-            s.send_header("Content-type", "text/html")
-            s.end_headers()
+            s.send_error(404)
 
-def run(port=3000):
+def run(port=5000):
+    port = os.getenv("PORT")
+    if port: port = int(port)
+
     httpd = http.server.HTTPServer( ( '', port ), DMMHandler )
     try:
         httpd.serve_forever()
