@@ -11,7 +11,7 @@ class DMM:
 
     L_PAGE = 'list-boxcaptside list-boxpagenation'
 
-    DOMAIN = ( 'digital/videoa', 'mono/dvd' )
+    REALM = ( 'digital/videoa', 'mono/dvd' )
 
     ART_ID = re.compile(r'article=(\w+)/id=(\d+)')
 
@@ -19,10 +19,10 @@ class DMM:
         """Standardize characters over realms."""
         return re.sub('〜','～',t)
 
-    def get_soup( self, page, domain=None ):
+    def get_soup( self, page, realm=None ):
         """Get page as a BeautifulSoup."""
 
-        if domain: page = '%s/-/%s' % ( domain, page )
+        if realm: page = '%s/-/%s' % ( realm, page )
         r = requests.get( 'http://www.dmm.co.jp/%s' % page )
 
         return BeautifulSoup( r.text, 'html.parser' )
@@ -43,29 +43,32 @@ class DMM:
         else:
             return name[0]
 
-    def get_article( self, domain, article, a_id ):
+    def get_article( self, realm, article, a_id ):
         """Get info of given ID."""
         item = {}
-        soup = self.get_soup( "list/=/article=%s/id=%s/" % ( article, a_id ), domain )
+        soup = self.get_soup( "list/=/article=%s/id=%s/" % ( article, a_id ), realm )
 
         t = re.sub( r' -[^-]+- DMM.R18$', '', soup.title.string )
         pg = soup.find('div',class_=self.L_PAGE)
 
         item['count'] = int(re.match(r'(\d+)',pg.p.string).group(1)) if pg else 0
 
+        item['name'] = t
+
         if article == 'actress' or article == 'director':
-            ft = re.match( r'(.+)\(([^)]*)\)$', t )
-            item['name'] = ft.group(1)
-            item['furi'] = ft.group(2)
-        else:
-            item['name'] = t
+            ft = re.match( r'(.+)[（(]([^)）]*)[)）]$', t )
+            if ft:
+                item['name'] = ft.group(1)
+                item['furi'] = ft.group(2)
+            else:
+                item['furi'] = ''
 
         return item
 
-    def get_work_page( self, domain, cid ):
+    def get_work_page( self, realm, cid ):
         """Get info page of given CID."""
         work = {}
-        soup = self.get_soup( "detail/=/cid=%s/" % cid, domain )
+        soup = self.get_soup( "detail/=/cid=%s/" % cid, realm )
 
         detail = soup.find('div',class_='page-detail').table
 
@@ -80,20 +83,20 @@ class DMM:
 
         return work
 
-    def get_related( self, domain, cid ):
+    def get_related( self, realm, cid ):
         """Get related CIDs and their realms."""
         cds = re.compile(r'dmm.co.jp/(.+)/-/detail/=/cid=(\w+)')
         path = "misc/-/mutual-link/ajax-index/=/cid={0}/service={1[0]}/shop={1[1]}/"
 
-        soup = self.get_soup( path.format( cid, domain.split('/') ) )
+        soup = self.get_soup( path.format( cid, realm.split('/') ) )
 
         return [ cds.search( l.a.get('href') ).groups() for l in soup('li') ]
 
-    def get_image_path( self, domain, pid, param='pt' ):
+    def get_image_path( self, realm, pid, param='pt' ):
         """Get image path."""
-        REALMS = ( 'digital/video', 'mono/movie/adult' )
+        IMG_REALM = ( 'digital/video', 'mono/movie/adult' )
 
-        return "{0}/{1}/{1}{2}.jpg".format( REALMS[self.DOMAIN.index(domain)], pid, param )
+        return "{0}/{1}/{1}{2}.jpg".format( IMG_REALM[self.REALM.index(realm)], pid, param )
 
     def get_sample_vid_path( self, cid, param='sm' ):
         """Get sample video path."""
@@ -185,7 +188,7 @@ class DMM:
 
         tags = []
 
-        soup = self.get_soup( 'genre/', self.DOMAIN[0] )
+        soup = self.get_soup( 'genre/', self.REALM[0] )
 
         for section in soup.find_all('div', id=re.compile('^list')):
             category = section.div.string
@@ -194,7 +197,7 @@ class DMM:
 
             tags.extend([ tag(link,category) for link in section.ul('a') ])
 
-        soup = self.get_soup( 'genre/', self.DOMAIN[1] )
+        soup = self.get_soup( 'genre/', self.REALM[1] )
 
         for section in soup.find_all('table', class_='sect02'):
             category = section.get('summary')
@@ -204,7 +207,7 @@ class DMM:
 
     def get_makers( self, mora, callback=print ):
 
-        def maker( item, domain ):
+        def maker( item, realm ):
             m = {}
 
             m['_id'] = self.get_id(item.a)
@@ -212,30 +215,30 @@ class DMM:
 
             m['roma'] = self.get_filename(item.img)
 
-            if domain == self.DOMAIN[0] :
+            if realm == self.REALM[0] :
                 m['name'] = item.find(class_='d-ttllarge').string
                 try:
-                    m['desc'] = item.p.string.strip()
+                    m['description'] = item.p.string.strip()
                 except AttributeError:
                     pass
 
-            elif domain == self.DOMAIN[1]:
+            elif realm == self.REALM[1]:
                 m['name'] = item.img.get('alt')
-                m['desc'] = self.normalize(item.br.string.strip())
+                m['description'] = self.normalize(item.br.string.strip())
 
             return m
 
         search = 'maker/=/keyword=%s/' % mora 
 
-        soup = self.get_soup( search, self.DOMAIN[0] )
+        soup = self.get_soup( search, self.REALM[0] )
 
         for div in soup.find_all('div', class_='d-boxpicdata d-smalltmb'):
-            callback( maker( div, self.DOMAIN[0] ) )
+            callback( maker( div, self.REALM[0] ) )
 
-        soup = self.get_soup( search, self.DOMAIN[1] )
+        soup = self.get_soup( search, self.REALM[1] )
 
         for cell in soup.find_all('td',class_='w50'):
-            callback( maker( cell, self.DOMAIN[1] ) )
+            callback( maker( cell, self.REALM[1] ) )
 
         extra_base = soup.find(class_='list-table mg-t12')
         if extra_base:
@@ -244,15 +247,15 @@ class DMM:
                 if not _id: continue
                 callback({ '_id': _id, 'name': link.string })
 
-    def get_works( self, domain, m_id, count, page=1, callback=print ):
+    def get_works( self, realm, m_id, count, page=1, callback=print ):
 
-        def get_rss( s, d, q ):
+        def get_rss( s, r, q ):
 
             URL = 'http://www.dmm.co.jp/{0}/-/list/{1}/article=maker/sort=release_date/{2}/' 
             RSS = ( "rss/=", "=/rss=create" )
 
-            print( "%s %s:" % (d, q), end="\t" )
-            r = s.get( URL.format( d, RSS[self.DOMAIN.index(d)], q ) )
+            print( "%s %s:" % (r, q), end="\t" )
+            r = s.get( URL.format( r, RSS[self.REALM.index(r)], q ) )
             print( r.elapsed, end="\r" )
 
             r.encoding = 'utf-8'
@@ -288,7 +291,8 @@ class DMM:
                 else:
                     work[l.group(1)] = l.group(2)
 
-            work['display_id'] = self.rename( work['pid'], work['maker'] )
+            work['_id'] = self.rename( work['pid'], work['maker'] )
+            work['realm'] = self.REALM.index(realm)
 
             return work
 
@@ -296,7 +300,7 @@ class DMM:
         worksession = requests.Session()
 
         while len(works) < count:
-            soup = get_rss( worksession, domain, "id=%d/page=%d" % ( m_id, page ) )
+            soup = get_rss( worksession, realm, "id=%d/page=%d" % ( m_id, page ) )
             for item in soup('item'): works.append( callback( parse_work_rss(item) ) )
             page += 1
 
