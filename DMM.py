@@ -39,7 +39,7 @@ class DMM:
         """Get filename from <img> tag src."""
         name = img.get('src').rsplit('/',1)[-1].split('.')
         if name[0] == 'noimage':
-            return '' 
+            return ''
         else:
             return name[0]
 
@@ -67,17 +67,21 @@ class DMM:
 
     def get_work_page( self, realm, cid ):
         """Get info page of given CID."""
+
         work = {}
         soup = self.get_soup( "detail/=/cid=%s/" % cid, realm )
 
         detail = soup.find('div',class_='page-detail').table
 
-        work['sample_images'] = len( detail.find('div',id='sample-image-block')('a') ) 
+        sample_imgs = detail.find('div',id='sample-image-block')
+        if sample_imgs: work['sample_images'] = len( sample_imgs('a') )
 
         for cell in detail.table('td'):
             try:
                 d = self.ART_ID.search( cell.a.get('href') ).groups()
             except AttributeError:
+                dt = re.match(r'(\d+)/(\d+)/(\d+)',next(cell.stripped_strings,''))
+                if not work['released_date'] and dt: work['released_date'] = dt.groups()
                 continue
             if d[0] == 'director': work['director'] = d[1]
 
@@ -114,7 +118,7 @@ class DMM:
 
         vid = get_sample_vid_id( cid )
 
-        if not vid: return None
+        if not vid: return ''
 
         return "litevideo/freepv/{0:.1}/{0:.3}/{0}/{0}_{1}_w.mp4".format( vid, param )
 
