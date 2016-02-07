@@ -81,7 +81,7 @@ class DMM:
                 d = self.ART_ID.search( cell.a.get('href') ).groups()
             except AttributeError:
                 dt = re.match(r'(\d+)/(\d+)/(\d+)',next(cell.stripped_strings,''))
-                if not work['released_date'] and dt: work['released_date'] = dt.groups()
+                if 'date' not in work and dt: work['date'] = '-'.join(dt.groups())
                 continue
             if d[0] == 'director': work['director'] = d[1]
 
@@ -92,9 +92,14 @@ class DMM:
         cds = re.compile(r'dmm.co.jp/(.+)/-/detail/=/cid=(\w+)')
         path = "misc/-/mutual-link/ajax-index/=/cid={0}/service={1[0]}/shop={1[1]}/"
 
+        related = []
         soup = self.get_soup( path.format( cid, realm.split('/') ) )
 
-        return [ cds.search( l.a.get('href') ).groups() for l in soup('li') ]
+        for l in soup('li'):
+            r = cds.search( l.a.get('href') )
+            if r.group(1) in ( 'mono/dvd', 'digital/videoa' ): related.append( r.groups() )
+
+        return related
 
     def get_image_path( self, realm, pid, param='pt' ):
         """Get image path."""
@@ -122,26 +127,7 @@ class DMM:
 
         return "litevideo/freepv/{0:.1}/{0:.3}/{0}/{0}_{1}_w.mp4".format( vid, param )
 
-    def rename( self, pid, maker=None ):
-        """Get DVD name from pid"""
-        id_base = re.compile(r'^((?:h_)?\d+)?([a-z]+(?:3d)?)(\d+)([a-z]+)?$')
-
-        def get_num(p,digits=3): return '-{:0{d}d}'.format(int(p[2]),d=digits)
-
-        def parse_tma( parts, d ):
-            if parts[0] == '55':
-                if parts[1] == 't':
-                    return "t%s-%s" % ( parts[2][0:2], parts[2][-3:] )
-                else:
-                    return parts[1] + get_num(parts)
-            else:
-                return "%s%s-%s" % ( parts[0][-2:], parts[1], parts[2][-3:] )
-
-        parser = {
-            6350 : { 'digits': 1 }, 40039 : { 'digits': 4 }, 45667 : { 'digits': 4 },
-            40041 : { 'txt': parse_tma, },
-            45249 : { 'txt': ( lambda p,d: ( 'nsps' if p[1] == 'bnsps' else p[1] ) + get_num(p) ) }
-        }
+    def identify_maker( self, pid ):
 
         makers = {
             '1'  : True, '13' : True, '53' : 40039, '59' : True, '61' : 40047, '84' : 40071,
@@ -150,34 +136,57 @@ class DMM:
             'h_422': 45667, 'h_565': True, 'h_606': True, 'h_796': True, 'h_843': True,
         }
 
-        try:
-            parts = id_base.match(pid).groups()
-        except AttributeError:
-            print("Error: Could not identify a base for %s" % pid )
-            return None
-
         if not parts[0]:
-            if not maker: maker = True
+            maker = True
             if parts[1] == 'bnsps': maker = 45249
-            if re.match(r'ktk[xp]', parts[1]): maker = 6350
         elif parts[0].startswith('55'):
             maker = 40041
         elif parts[0] in makers:
             maker = makers[parts[0]]
 
         if not maker:
-            print("Error: Could not identify a maker for %s" % pid )
+            return None
+
+    def rename( self, pid, maker ):
+        """Get DVD name from pid and maker."""
+
+        def get_num(p,digits=3): return '-{:0{d}d}'.format(int(p[1]),d=digits)
+
+        def get_txt(p,digits): return p[0] + get_num(p,digits)
+
+        id_base = ( r'^(?:h_)?(?:\d+)?', r'((?:d1)?[a-z]+(?:3d)?[a-z]*)', r'(\d+)([a-z]+)?$' )
+
+        default_parser = { 're': ''.join(id_base), 'digits': 3, 'txt': get_txt }
+
+        parsers = {
+            1398 : {
+                're': r'^(d1clymax|dcb1|[a-z]+)' + id_base[2],
+                'txt': lambda p,d: get_txt(p,d) + ( '-%s' % p[2] if p[2] else '' )
+            },
+            40039 : { 'digits': 4 }, 45667 : { 'digits': 4 },
+            40041 : { 're': r'^(55)(t28|\d*[a-z]+)(\d+)$' },
+            45249 : { 'massage': lambda p: ('nsps',p[1]) if p[0] == 'bnsps' else p }
+        }
+
+        try:
+            parser = parsers[int(maker)]
+            for k in ( 're', 'digits', 'txt' ):
+                if k not in parser: parser[k] = default_parser[k]
+        except KeyError:
+            parser = default_parser
+        except ( TypeError, ValueError ):
+            print( "Error: Could not get maker %s" % maker )
             return None
 
         try:
-            digits = parser[maker]['digits']
-        except KeyError:
-            digits = 3
+            parts = re.match(parser['re'],pid).groups()
+        except AttributeError:
+            print( "Error: Could not identify a base for %s" % pid )
+            return None
 
-        try:
-            return parser[maker]['txt']( parts, digits ).upper()
-        except KeyError:
-            return parts[1].upper() + get_num(parts,digits)
+        if 'massage' in parser: parts = parser['massage']( parts )
+
+        return parser['txt']( parts, parser['digits'] ).upper()
 
     def get_keywords( self ):
         """Get keywords in array."""
