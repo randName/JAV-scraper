@@ -1,17 +1,17 @@
-import requests, re
+import re
+import requests
 from bs4 import BeautifulSoup
-
 from datetime import timedelta
 
 class DMM:
     """Website as an object."""
 
+    REALMS = ( 'digital/videoa', 'mono/dvd' )
+
     MORAS = [ c.strip()+v for c in ' kstnhmr' for v in 'aiueo' ]
     MORAS.extend(['ya','yu','yo','wa','wo','nn'])
 
     L_PAGE = 'list-boxcaptside list-boxpagenation'
-
-    REALM = ( 'digital/videoa', 'mono/dvd' )
 
     ART_ID = re.compile(r'article=(\w+)/id=(\d+)')
 
@@ -22,7 +22,7 @@ class DMM:
     def get_soup( self, page, realm=None ):
         """Get page as a BeautifulSoup."""
 
-        if realm: page = '%s/-/%s' % ( realm, page )
+        if realm is not None: page = '%s/-/%s' % ( self.REALMS[realm], page )
         r = requests.get( 'http://www.dmm.co.jp/%s' % page )
 
         return BeautifulSoup( r.text, 'html.parser' )
@@ -93,7 +93,7 @@ class DMM:
         path = "misc/-/mutual-link/ajax-index/=/cid={0}/service={1[0]}/shop={1[1]}/"
 
         related = []
-        soup = self.get_soup( path.format( cid, realm.split('/') ) )
+        soup = self.get_soup( path.format( cid, self.REALMS[realm].split('/') ) )
 
         for l in soup('li'):
             r = cds.search( l.a.get('href') )
@@ -105,7 +105,7 @@ class DMM:
         """Get image path."""
         IMG_REALM = ( 'digital/video', 'mono/movie/adult' )
 
-        return "{0}/{1}/{1}{2}.jpg".format( IMG_REALM[self.REALM.index(realm)], pid, param )
+        return "{0}/{1}/{1}{2}.jpg".format( IMG_REALM[realm], pid, param )
 
     def get_sample_vid_path( self, cid, param='sm' ):
         """Get sample video path."""
@@ -201,7 +201,7 @@ class DMM:
 
         tags = []
 
-        soup = self.get_soup( 'genre/', self.REALM[0] )
+        soup = self.get_soup( 'genre/', 0 )
 
         for section in soup.find_all('div', id=re.compile('^list')):
             category = section.div.string
@@ -210,7 +210,7 @@ class DMM:
 
             tags.extend([ tag(link,category) for link in section.ul('a') ])
 
-        soup = self.get_soup( 'genre/', self.REALM[1] )
+        soup = self.get_soup( 'genre/', 1 )
 
         for section in soup.find_all('table', class_='sect02'):
             category = section.get('summary')
@@ -228,14 +228,14 @@ class DMM:
 
             m['roma'] = self.get_filename(item.img)
 
-            if realm == self.REALM[0] :
+            if realm == 0:
                 m['name'] = item.find(class_='d-ttllarge').string
                 try:
                     m['description'] = item.p.string.strip()
                 except AttributeError:
                     pass
 
-            elif realm == self.REALM[1]:
+            elif realm == 1:
                 m['name'] = item.img.get('alt')
                 m['description'] = self.normalize(item.br.string.strip())
 
@@ -243,15 +243,15 @@ class DMM:
 
         search = 'maker/=/keyword=%s/' % mora 
 
-        soup = self.get_soup( search, self.REALM[0] )
+        soup = self.get_soup( search, 0 )
 
         for div in soup.find_all('div', class_='d-boxpicdata d-smalltmb'):
-            callback( maker( div, self.REALM[0] ) )
+            callback( maker( div, 0 ) )
 
-        soup = self.get_soup( search, self.REALM[1] )
+        soup = self.get_soup( search, 1 )
 
         for cell in soup.find_all('td',class_='w50'):
-            callback( maker( cell, self.REALM[1] ) )
+            callback( maker( cell, 1 ) )
 
         extra_base = soup.find(class_='list-table mg-t12')
         if extra_base:
@@ -268,7 +268,7 @@ class DMM:
             RSS = ( "rss/=", "=/rss=create" )
 
             print( "%s %s:" % (r, q), end="\t" )
-            r = s.get( URL.format( r, RSS[self.REALM.index(r)], q ) )
+            r = s.get( URL.format( self.REALMS[r], RSS[r], q ) )
             print( r.elapsed, end="\r" )
 
             r.encoding = 'utf-8'
@@ -305,7 +305,7 @@ class DMM:
                     work[l.group(1)] = l.group(2)
 
             work['_id'] = self.rename( work['pid'], work['maker'] )
-            work['realm'] = self.REALM.index(realm)
+            work['realm'] = realm
 
             return work
 
