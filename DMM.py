@@ -51,7 +51,10 @@ class DMM:
         t = re.sub( r' -[^-]+- DMM.R18$', '', soup.title.string )
         pg = soup.find('div',class_=self.L_PAGE)
 
-        item['count'] = int(re.match(r'(\d+)',pg.p.string).group(1)) if pg else 0
+        item['count'] = 0
+        if pg:
+            numz = pg.p.string.replace(',','')
+            item['count'] = int(re.match(r'(\d+)',numz).group(1))
 
         item['name'] = t
 
