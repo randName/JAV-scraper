@@ -48,7 +48,6 @@ class DMM:
         item = {}
         soup = self.get_soup( "list/=/article=%s/id=%s/" % ( article, a_id ), realm )
 
-        t = re.sub( r' -[^-]+- DMM.R18$', '', soup.title.string )
         pg = soup.find('div',class_=self.L_PAGE)
 
         item['count'] = 0
@@ -56,15 +55,17 @@ class DMM:
             numz = pg.p.string.replace(',','')
             item['count'] = int(re.match(r'(\d+)',numz).group(1))
 
-        item['name'] = t
+        item['name'] = re.sub( r' -[^-]+- DMM.R18$', '', soup.title.string )
 
         if article == 'actress' or article == 'director':
-            ft = re.match( r'(.+)[（(]([^)）]*)[)）]$', t )
+            ft = re.split( r'[()（）]+', item['name'] )[:-1]
+
             if ft:
-                item['name'] = ft.group(1)
-                item['furi'] = ft.group(2)
-            else:
-                item['furi'] = ''
+                item['name'] = ft[0]
+                item['furi'] = ft[-1]
+
+                if len(ft) == 3:
+                    item['alias'] = ft[1]
 
         return item
 
@@ -155,19 +156,20 @@ class DMM:
 
         def get_num(p,digits=3): return '-{:0{d}d}'.format(int(p[1]),d=digits)
 
-        def get_txt(p,digits): return p[0] + get_num(p,digits)
+        def get_suffix(p):
+            if not p[2]: return ''
+            return p[2] if '_' in p[2] else '-%s' % p[2]
 
-        id_base = ( r'^(?:h_)?(?:\d+)?', r'((?:d1)?[a-z]+(?:3d)?[a-z]*)', r'(\d+)([a-z]+)?$' )
+        def get_txt(p,digits): return p[0] + get_num(p,digits) + get_suffix(p)
+
+        id_base = ( r'^(?:h_)?(?:\d+)?', r'((?:d1)?[a-z]+(?:3d)?[a-z]*)', r'(\d+)([a-z]+|_\d)?$' )
 
         default_parser = { 're': ''.join(id_base), 'digits': 3, 'txt': get_txt }
 
         parsers = {
-            1398 : {
-                're': r'^(d1clymax|dcb1|[a-z]+)' + id_base[2],
-                'txt': lambda p,d: get_txt(p,d) + ( '-%s' % p[2] if p[2] else '' )
-            },
+            1398 : { 're': r'^(d1clymax|dcb1|[a-z]+)' + id_base[2] },
             40039 : { 'digits': 4 }, 45667 : { 'digits': 4 },
-            40041 : { 're': r'^(55)(t28|\d*[a-z]+)(\d+)$' },
+            40041 : { 're': r'^(?:55|57)(t28|\d*[a-z]+)(\d+)$' },
             45249 : { 'massage': lambda p: ('nsps',p[1]) if p[0] == 'bnsps' else p }
         }
 
