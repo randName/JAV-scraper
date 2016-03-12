@@ -169,7 +169,7 @@ class DMM:
         parsers = {
             1398 : { 're': r'^(d1clymax|dcb1|[a-z]+)' + id_base[2] },
             40039 : { 'digits': 4 }, 45667 : { 'digits': 4 },
-            40041 : { 're': r'^(?:55|57)(t28|\d*[a-z]+)(\d+)$' },
+            40041 : { 're': r'^(?:55|57)(t28|\d*[a-z]+)(\d+)([a-z])?$' },
             45249 : { 'massage': lambda p: ('nsps',p[1]) if p[0] == 'bnsps' else p }
         }
 
