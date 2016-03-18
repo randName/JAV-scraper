@@ -109,6 +109,8 @@ class DMM:
         """Get image path."""
         IMG_REALM = ( 'digital/video', 'mono/movie/adult' )
 
+        if param.startswith('jp'): realm = 0
+
         return "{0}/{1}/{1}{2}.jpg".format( IMG_REALM[realm], pid, param )
 
     def get_sample_vid_path( self, cid, param='sm' ):
